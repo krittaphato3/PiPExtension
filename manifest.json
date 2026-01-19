@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "FullPiP - Live Image & Video",
+  "version": "1.0",
+  "author": "krittaphato3",
+  "description": "Advanced Picture-in-Picture context menu integration with live DOM mutation observation.",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab",
+    "scripting",
+    "documentPictureInPicture"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "FullPiP Settings"
+  }
+}
