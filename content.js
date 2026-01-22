@@ -1,115 +1,174 @@
 /**
  * @file content.js
  * @author krittaphato3
- * @desc Handles DOM interactions, Document PiP API implementation, and Auto-trigger logic.
+ * @desc High-performance DOM agent. Features debounce logic and crash protection.
  */
 
-let ctxTarget = null; // Caches last right-clicked element
-let pipWindow = null;
-let imgObserver = null;
+// --- State Management ---
+const State = {
+  lastRightClickTarget: null,
+  pipWindow: null,
+  observer: null,
+  isHoveringPip: false
+};
 
-// Capture right-click target for context-aware operations
+// --- Utilities ---
+const Debounce = (func, delay) => {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func.apply(this, args), delay);
+  };
+};
+
+// --- Event Listeners ---
 document.addEventListener("mousedown", (e) => {
-    if (e.button === 2) ctxTarget = e.target;
+  if (e.button === 2) State.lastRightClickTarget = e.target;
 }, true);
 
-// IPC Listener
 chrome.runtime.onMessage.addListener((req) => {
-    const actions = {
-        "triggerVideoPiP": () => execVideoPiP(req.srcUrl),
-        "triggerImagePiP": () => execLiveImagePiP()
-    };
-    if (actions[req.action]) actions[req.action]();
+  switch (req.action) {
+    case "contextMenuTrigger":
+      req.type === 'video' ? launchVideoPiP(req.srcUrl) : launchImagePiP();
+      break;
+    case "shortcutTrigger":
+      // Heuristic: Try video first, then fallback to last clicked image
+      const mainVideo = document.querySelector('video');
+      if (mainVideo) launchVideoPiP(mainVideo.src);
+      else if (State.lastRightClickTarget) launchImagePiP();
+      break;
+  }
 });
 
-/**
- * Executes Standard Video PiP
- * @param {string} srcUrl - Source URL of the target video
- */
-async function execVideoPiP(srcUrl) {
-    const video = document.querySelector(`video[src="${srcUrl}"]`) || document.querySelector('video');
-    
-    if (!video?.requestPictureInPicture) return;
+// --- Core Feature: Video PiP ---
+async function launchVideoPiP(srcUrl) {
+  const video = (srcUrl && document.querySelector(`video[src="${srcUrl}"]`)) 
+                || document.querySelector('video');
 
-    try {
-        await video.requestPictureInPicture();
-    } catch (e) {
-        console.error("[FullPiP] Video PiP Failed:", e);
-    }
+  if (!video) return console.warn("[FullPiP] No video found.");
+  if (video.disablePictureInPicture) return alert("This site has disabled PiP.");
+
+  try {
+    if (document.pictureInPictureElement) await document.exitPictureInPicture();
+    await video.requestPictureInPicture();
+  } catch (e) {
+    console.error("[FullPiP] Video Error:", e);
+  }
 }
 
-/**
- * Executes Document PiP for Images with MutationObserver sync
- */
-async function execLiveImagePiP() {
-    if (!ctxTarget || !window.documentPictureInPicture) {
-        return console.warn("[FullPiP] Target invalid or API unsupported.");
-    }
+// --- Core Feature: Live Image PiP ---
+async function launchImagePiP() {
+  const target = State.lastRightClickTarget;
+  if (!target || !window.documentPictureInPicture) return;
 
-    // Cleanup existing instances
-    if (pipWindow) pipWindow.close();
+  // 1. Close existing to prevent collisions
+  if (State.pipWindow) {
+    State.pipWindow.close();
+    State.pipWindow = null;
+  }
 
-    try {
-        // Init PiP Window
-        pipWindow = await window.documentPictureInPicture.requestWindow({
-            width: ctxTarget.naturalWidth / 2 || 400,
-            height: ctxTarget.naturalHeight / 2 || 300
-        });
-
-        const doc = pipWindow.document;
-        Object.assign(doc.body.style, {
-            margin: '0', background: '#000', display: 'flex', 
-            justifyContent: 'center', alignItems: 'center', height: '100vh'
-        });
-
-        const img = doc.createElement('img');
-        Object.assign(img.style, {
-            maxWidth: '100%', maxHeight: '100%', objectFit: 'contain'
-        });
-        
-        img.src = ctxTarget.src || getComputedStyle(ctxTarget).backgroundImage.slice(5, -2);
-        doc.body.appendChild(img);
-
-        if (imgObserver) imgObserver.disconnect();
-        
-        imgObserver = new MutationObserver((mutations) => {
-            if (mutations.some(m => m.type === 'attributes' && ['src', 'srcset'].includes(m.attributeName))) {
-                img.src = ctxTarget.src;
-            }
-        });
-
-        imgObserver.observe(ctxTarget, { attributes: true });
-
-        pipWindow.addEventListener("pagehide", () => {
-             if (imgObserver) imgObserver.disconnect();
-             pipWindow = null;
-        });
-
-    } catch (e) {
-        console.error("[FullPiP] DocPiP Error:", e);
-    }
-}
-
-/**
- * Auto-PiP logic based on user config
- */
-(() => {
-    chrome.storage.sync.get(['autoPipEnabled'], ({ autoPipEnabled }) => {
-        if (!autoPipEnabled) return;
-
-        const autoTrigger = async () => {
-            const v = document.querySelector('video');
-            if (v && v.readyState > 0) {
-                try {
-                    await v.requestPictureInPicture();
-                    ['click', 'keydown'].forEach(evt => 
-                        document.removeEventListener(evt, autoTrigger, { capture: true })
-                    );
-                } catch (e) {}
-            }
-        };
-        ['click', 'keydown'].forEach(evt => 
-            document.addEventListener(evt, autoTrigger, { capture: true })
-        );
+  try {
+    // 2. Open Window
+    State.pipWindow = await window.documentPictureInPicture.requestWindow({
+      width: target.naturalWidth / 2 || 500,
+      height: target.naturalHeight / 2 || 500
     });
+
+    // 3. Style & Inject
+    const doc = State.pipWindow.document;
+    setupPipStyles(doc);
+
+    const img = doc.createElement('img');
+    img.id = "fullpip-live-img";
+    img.src = target.src || extractBgImage(target);
+    doc.body.append(img);
+
+    // 4. Optimized Sync (Debounced 50ms)
+    setupLiveSync(target, img);
+
+    // 5. Cleanup Hook
+    State.pipWindow.addEventListener("pagehide", cleanupPipState);
+
+  } catch (e) {
+    console.error("[FullPiP] Image Engine Failed:", e);
+  }
+}
+
+// --- Logic: Sync & Optimization ---
+function setupLiveSync(sourceNode, pipImgNode) {
+  if (State.observer) State.observer.disconnect();
+
+  const syncLogic = Debounce(() => {
+    const newSrc = sourceNode.src || extractBgImage(sourceNode);
+    if (pipImgNode.src !== newSrc) {
+      pipImgNode.src = newSrc;
+    }
+  }, 50); // 50ms delay reduces CPU load on rapid changes
+
+  State.observer = new MutationObserver((mutations) => {
+    const relevant = mutations.some(m => 
+      m.type === 'attributes' && ['src', 'srcset', 'style'].includes(m.attributeName)
+    );
+    if (relevant) syncLogic();
+  });
+
+  State.observer.observe(sourceNode, { attributes: true });
+}
+
+function cleanupPipState() {
+  if (State.observer) State.observer.disconnect();
+  State.pipWindow = null;
+  State.observer = null;
+}
+
+// --- Logic: Styling & UI ---
+function setupPipStyles(doc) {
+  const style = doc.createElement('style');
+  style.textContent = `
+    body { 
+      margin: 0; background: #000; height: 100vh; 
+      display: flex; justify-content: center; align-items: center; 
+      overflow: hidden; cursor: none; /* Hide cursor for clean look */
+    }
+    body:hover { cursor: default; } /* Show cursor on hover */
+    img { 
+      max-width: 100%; max-height: 100%; object-fit: contain; 
+      pointer-events: none; user-select: none;
+    }
+  `;
+  doc.head.append(style);
+}
+
+function extractBgImage(node) {
+  const bg = getComputedStyle(node).backgroundImage;
+  return (bg.match(/url\(['"]?([^'"]*)['"]?\)/) || [])[1] || "";
+}
+
+// --- Auto-PiP Engine ---
+(function initAutoPip() {
+  chrome.storage.sync.get(['autoPipEnabled'], ({ autoPipEnabled }) => {
+    if (!autoPipEnabled) return;
+
+    const attemptPip = async () => {
+      const v = document.querySelector('video');
+      // Only trigger if video is playing or ready to prevent errors
+      if (v && v.readyState > 0 && !v.paused) {
+        try {
+          await v.requestPictureInPicture();
+          cleanupAutoListeners();
+        } catch (e) { /* Pending user interaction */ }
+      }
+    };
+
+    const cleanupAutoListeners = () => {
+      ['click', 'keydown', 'scroll'].forEach(evt => 
+        document.removeEventListener(evt, attemptPip, { capture: true })
+      );
+    };
+
+    // Add listeners
+    ['click', 'keydown', 'scroll'].forEach(evt => 
+      document.addEventListener(evt, attemptPip, { capture: true, passive: true })
+    );
+  });
 })();

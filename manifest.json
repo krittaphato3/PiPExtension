@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "FullPiP - Live Image & Video",
-  "version": "1.0",
+  "name": "FullPiP - Ultimate Picture-in-Picture",
+  "version": "2.0.0",
   "author": "krittaphato3",
-  "description": "Advanced Picture-in-Picture context menu integration with live DOM mutation observation.",
+  "description": "Professional-grade PiP tool. Live image sync, auto-trigger, and keyboard shortcuts.",
   "permissions": [
     "contextMenus",
     "storage",
@@ -23,6 +23,15 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "FullPiP Settings"
+    "default_title": "FullPiP Control Center"
+  },
+  "commands": {
+    "toggle-pip": {
+      "suggested_key": {
+        "default": "Alt+P",
+        "mac": "Alt+P"
+      },
+      "description": "Toggle PiP for the main media on page"
+    }
   }
 }

@@ -7,26 +7,41 @@
 <body>
     <div class="container">
         <header>
-            <div class="icon-placeholder">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            <div class="brand">
+                <div class="logo">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M12 2v20"/><path d="M2 12h20"/></svg>
+                </div>
+                <h1>FullPiP <span class="badge">PRO</span></h1>
             </div>
-            <h1>FullPiP</h1>
+            <div class="theme-toggle" id="themeBtn" title="Toggle Dark/Light Mode">
+                </div>
         </header>
 
-        <div class="card">
-            <div class="setting-row">
-                <div class="setting-text">
-                    <span class="setting-label">Auto-PiP Mode</span>
+        <main>
+            <div class="card">
+                <div class="setting-item">
+                    <div class="meta">
+                        <span class="label">Auto-PiP Mode</span>
+                        <span class="desc">Pop video automatically on interaction</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="autoPipCheckbox">
+                        <span class="slider"></span>
+                    </label>
                 </div>
-                <label class="switch">
-                    <input type="checkbox" id="autoPipCheckbox">
-                    <span class="slider round"></span>
-                </label>
             </div>
-        </div>
+
+            <div class="card secondary">
+                <div class="info-row">
+                    <span>Shortcut</span>
+                    <kbd>Alt + P</kbd>
+                </div>
+            </div>
+        </main>
 
         <footer>
-            <p>Dev: <span class="accent">krittaphato3</span></p>
+            <div class="status">v2.0.0 • Stable</div>
+            <a href="https://github.com/krittaphato3" target="_blank" class="author">krittaphato3</a>
         </footer>
     </div>
     <script src="popup.js"></script>

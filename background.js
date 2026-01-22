@@ -1,30 +1,45 @@
 /**
  * @file background.js
  * @author krittaphato3
- * @desc Service worker handling context menu initialization and IPC message routing.
+ * @desc Production-ready service worker. Handles IPC, Context Menus, and Shortcuts.
  */
 
-chrome.runtime.onInstalled.addListener(() => {
-  const menus = [
-    { id: "fullpip-video", title: "FullPiP: Open Video", contexts: ["video"] },
-    { id: "fullpip-image", title: "FullPiP: Open Live Image", contexts: ["image"] }
-  ];
+const MENUS = {
+  VIDEO: "fullpip-video",
+  IMAGE: "fullpip-image"
+};
 
-  menus.forEach(menu => chrome.contextMenus.create(menu));
+// Initialization
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({ id: MENUS.VIDEO, title: "FullPiP: Pop Video", contexts: ["video"] });
+  chrome.contextMenus.create({ id: MENUS.IMAGE, title: "FullPiP: Pop Live Image", contexts: ["image"] });
 });
 
+// Context Menu Handler
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab?.id) return;
 
-  const actionMap = {
-    "fullpip-video": "triggerVideoPiP",
-    "fullpip-image": "triggerImagePiP"
+  const payload = { 
+    srcUrl: info.srcUrl,
+    type: info.menuItemId === MENUS.VIDEO ? 'video' : 'image'
   };
 
-  if (actionMap[info.menuItemId]) {
-    chrome.tabs.sendMessage(tab.id, { 
-      action: actionMap[info.menuItemId], 
-      srcUrl: info.srcUrl 
-    }).catch(err => console.debug("IPC Error (Content script likely not ready):", err));
+  dispatchToContent(tab.id, "contextMenuTrigger", payload);
+});
+
+// Keyboard Shortcut Handler
+chrome.commands.onCommand.addListener((command) => {
+  if (command === "toggle-pip") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) dispatchToContent(tabs[0].id, "shortcutTrigger", {});
+    });
   }
 });
+
+// Helper: Safe Message Dispatch
+function dispatchToContent(tabId, action, data) {
+  chrome.tabs.sendMessage(tabId, { action, ...data }).catch(err => {
+    // Suppress "Receiving end does not exist" errors on restricted pages (e.g. Chrome Web Store)
+    console.debug(`[FullPiP] IPC Handshake failed: ${err.message}`);
+  });
+}
