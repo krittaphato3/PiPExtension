@@ -18,18 +18,28 @@
         </header>
 
         <main>
-            <div class="card">
-                <div class="setting-item">
-                    <div class="meta">
-                        <span class="label">Auto-PiP Mode</span>
-                        <span class="desc">Pop video automatically on interaction</span>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="autoPipCheckbox">
-                        <span class="slider"></span>
-                    </label>
-                </div>
+    <!-- Settings -->
+    <div class="card">
+        <div class="setting-item">
+            <div class="meta">
+                <span class="label">Auto-PiP Mode</span>
+                <span class="desc">Pop video when scrolling away</span>
             </div>
+            <label class="switch">
+                <input type="checkbox" id="autoPipCheckbox">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <!-- Media List -->
+    <h2 class="media-header">Active Media</h2>
+    <div id="media-list">
+        <!-- Items injected by JS -->
+        <div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">Scanning...</div>
+    </div>
+
+    <!-- Info -->
 
             <div class="card secondary">
                 <div class="info-row">

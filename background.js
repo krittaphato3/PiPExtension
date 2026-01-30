@@ -33,6 +33,10 @@ chrome.commands.onCommand.addListener((command) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]?.id) dispatchToContent(tabs[0].id, "shortcutTrigger", {});
     });
+  } else if (command === "toggle-picker") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]?.id) dispatchToContent(tabs[0].id, "togglePickerMode", {});
+    });
   }
 });
 
