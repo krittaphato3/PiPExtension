@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="brand">
+                <div class="logo">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M12 2v20"/><path d="M2 12h20"/></svg>
+                </div>
+                <h1>FullPiP <span class="badge">PRO</span></h1>
+            </div>
+            <div class="theme-toggle" id="themeBtn" title="Toggle Dark/Light Mode"></div>
+        </header>
+
+        <main>
+            <div class="card">
+                <div class="setting-item">
+                    <div class="meta">
+                        <span class="label">Auto-PiP Mode</span>
+                        <span class="desc">Pop video when scrolling away</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="autoPipEnabled">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <h2 class="media-header">Viewer Controls</h2>
+            <div class="card">
+                <div class="setting-item mb-2">
+                    <div class="meta">
+                        <span class="label">Lock Position</span>
+                        <span class="desc">Disable dragging (Zoom only)</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="pipLockPan">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item mb-2">
+                    <div class="meta">
+                        <span class="label">Invert Zoom</span>
+                        <span class="desc">Flip scroll wheel direction</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="pipInvertZoom">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item mb-2">
+                    <div class="meta">
+                        <span class="label">Double-Click Reset</span>
+                        <span class="desc">Restore 100% size and center</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="pipDblClickReset">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <div class="meta">
+                        <span class="label">Background</span>
+                        <span class="desc">Backdrop for transparent images</span>
+                    </div>
+                    <select id="pipBackgroundColor" class="dropdown">
+                        <option value="auto">Auto (Default)</option>
+                        <option value="black">Black</option>
+                        <option value="white">White</option>
+                        <option value="grid">Checkerboard</option>
+                    </select>
+                </div>
+            </div>
+
+            <h2 class="media-header">Active Media</h2>
+            <div id="media-list">
+                <div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">Scanning...</div>
+            </div>
+
+            <div class="card secondary">
+                <div class="info-row">
+                    <span>Shortcut</span>
+                    <kbd>Alt + P</kbd>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <div class="status">v2.1.0 • Stable</div>
+            <a href="https://github.com/krittaphato3" target="_blank" class="author">krittaphato3</a>
+        </footer>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>

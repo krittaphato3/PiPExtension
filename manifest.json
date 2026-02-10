@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "FullPiP - Ultimate Picture-in-Picture",
+  "version": "2.1.0",
+  "author": "krittaphato3",
+  "description": "Professional-grade PiP tool. Live image sync, auto-trigger, and fully customizable viewer.",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "activeTab",
+    "scripting",
+    "documentPictureInPicture"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "FullPiP Control Center"
+  },
+  "commands": {
+    "toggle-pip": {
+      "suggested_key": {
+        "default": "Alt+P",
+        "mac": "Alt+P"
+      },
+      "description": "Toggle PiP for the main media on page"
+    }
+  }
+}
