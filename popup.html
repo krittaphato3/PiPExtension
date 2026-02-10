@@ -11,7 +11,7 @@
                 <div class="logo">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M12 2v20"/><path d="M2 12h20"/></svg>
                 </div>
-                <h1>FullPiP <span class="badge">PRO</span></h1>
+                <h1>FullPiP <span class="badge">MAX</span></h1>
             </div>
             <div class="theme-toggle" id="themeBtn" title="Toggle Dark/Light Mode"></div>
         </header>
@@ -21,7 +21,7 @@
                 <div class="setting-item">
                     <div class="meta">
                         <span class="label">Auto-PiP Mode</span>
-                        <span class="desc">Pop video when scrolling away</span>
+                        <span class="desc">Pop video automatically on scroll</span>
                     </div>
                     <label class="switch">
                         <input type="checkbox" id="autoPipEnabled">
@@ -30,7 +30,35 @@
                 </div>
             </div>
 
-            <h2 class="media-header">Viewer Controls</h2>
+            <h2 class="media-header">Window Behavior</h2>
+            <div class="card">
+                <div class="setting-item mb-2">
+                    <div class="meta">
+                        <span class="label">Initial Size</span>
+                        <span class="desc">How the window opens</span>
+                    </div>
+                    <select id="pipInitialSize" class="dropdown">
+                        <option value="half">Half Size (Default)</option>
+                        <option value="actual">Actual Size (1:1)</option>
+                        <option value="fit">Force Fit Screen</option>
+                    </select>
+                </div>
+
+                <div class="setting-item">
+                    <div class="meta">
+                        <span class="label">Background</span>
+                        <span class="desc">For transparent images</span>
+                    </div>
+                    <select id="pipBackgroundColor" class="dropdown">
+                        <option value="auto">Auto (Detect)</option>
+                        <option value="black">Black</option>
+                        <option value="white">White</option>
+                        <option value="grid">Checkerboard</option>
+                    </select>
+                </div>
+            </div>
+
+            <h2 class="media-header">Interaction</h2>
             <div class="card">
                 <div class="setting-item mb-2">
                     <div class="meta">
@@ -45,37 +73,32 @@
 
                 <div class="setting-item mb-2">
                     <div class="meta">
-                        <span class="label">Invert Zoom</span>
-                        <span class="desc">Flip scroll wheel direction</span>
+                        <span class="label">Edge Resistance</span>
+                        <span class="desc">Keep image inside window</span>
                     </div>
                     <label class="switch">
-                        <input type="checkbox" id="pipInvertZoom">
+                        <input type="checkbox" id="pipEdgeLock">
                         <span class="slider"></span>
                     </label>
                 </div>
 
                 <div class="setting-item mb-2">
                     <div class="meta">
-                        <span class="label">Double-Click Reset</span>
-                        <span class="desc">Restore 100% size and center</span>
+                        <span class="label">Smart Zoom Limit</span>
+                        <span class="desc">Prevent zooming out too far</span>
                     </div>
                     <label class="switch">
-                        <input type="checkbox" id="pipDblClickReset">
+                        <input type="checkbox" id="pipZoomSmartLimit">
                         <span class="slider"></span>
                     </label>
                 </div>
 
-                <div class="setting-item">
-                    <div class="meta">
-                        <span class="label">Background</span>
-                        <span class="desc">Backdrop for transparent images</span>
+                <div class="setting-item stack">
+                    <div class="meta" style="flex-direction: row; justify-content: space-between; width: 100%;">
+                        <span class="label">Zoom Speed</span>
+                        <span class="desc" id="speedVal">1.0x</span>
                     </div>
-                    <select id="pipBackgroundColor" class="dropdown">
-                        <option value="auto">Auto (Default)</option>
-                        <option value="black">Black</option>
-                        <option value="white">White</option>
-                        <option value="grid">Checkerboard</option>
-                    </select>
+                    <input type="range" id="pipZoomSpeed" min="0.1" max="3.0" step="0.1" value="1.0" class="range-input">
                 </div>
             </div>
 
@@ -83,17 +106,21 @@
             <div id="media-list">
                 <div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">Scanning...</div>
             </div>
-
-            <div class="card secondary">
+            
+             <div class="card secondary">
                 <div class="info-row">
                     <span>Shortcut</span>
                     <kbd>Alt + P</kbd>
+                </div>
+                <div class="info-row" style="margin-top:4px">
+                    <span>Reset View</span>
+                    <kbd>Double Click</kbd>
                 </div>
             </div>
         </main>
 
         <footer>
-            <div class="status">v2.1.0 • Stable</div>
+            <div class="status">v2.2.0 • Stable</div>
             <a href="https://github.com/krittaphato3" target="_blank" class="author">krittaphato3</a>
         </footer>
     </div>

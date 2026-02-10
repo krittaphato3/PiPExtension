@@ -1,7 +1,7 @@
 /**
  * @file content.js
  * @author krittaphato3
- * @desc High-performance DOM agent. Features debounce logic and crash protection.
+ * @desc High-performance DOM agent. Features debounce logic, RAF rendering, and crash protection.
  */
 
 // --- State Management ---
@@ -43,7 +43,6 @@ const findMainVideo = () => {
 
   if (!visible.length) return null;
 
-  // Sort by surface area (largest first)
   visible.sort((a, b) => {
     const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
     return (rb.width * rb.height) - (ra.width * ra.height);
@@ -97,7 +96,7 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   }
 });
 
-// --- Picker Mode Logic ---
+// --- Picker Mode ---
 function togglePickerMode() {
   State.isPickerActive = !State.isPickerActive;
   
@@ -147,7 +146,7 @@ function handlePickerKey(e) {
   }
 }
 
-// --- Core Feature: Generic Element PiP ---
+// --- Element PiP ---
 async function launchElementPiP(sourceNode) {
   if (!window.documentPictureInPicture) return;
   
@@ -165,6 +164,7 @@ async function launchElementPiP(sourceNode) {
 
     const doc = State.pipWindow.document;
     
+    // Clone Styles
     Array.from(document.styleSheets).forEach(styleSheet => {
       try {
         if (styleSheet.href) {
@@ -196,7 +196,7 @@ async function launchElementPiP(sourceNode) {
   }
 }
 
-// --- Core Feature: Video PiP ---
+// --- Video PiP ---
 async function launchVideoPiP(target) {
   let video;
   
@@ -219,17 +219,18 @@ async function launchVideoPiP(target) {
   }
 }
 
-// --- Core Feature: Live Image PiP ---
+// --- Image PiP (Main Feature) ---
 async function launchImagePiP() {
   const target = State.lastRightClickTarget;
   if (!target || !window.documentPictureInPicture) return;
 
-  // Fetch Settings first
   const settings = await chrome.storage.sync.get({
+    pipInitialSize: 'half',
+    pipBackgroundColor: 'auto',
     pipLockPan: false,
-    pipInvertZoom: false,
-    pipDblClickReset: true,
-    pipBackgroundColor: 'auto'
+    pipEdgeLock: false,
+    pipZoomSmartLimit: true,
+    pipZoomSpeed: 1.0
   });
 
   if (State.pipWindow) {
@@ -237,10 +238,36 @@ async function launchImagePiP() {
     State.pipWindow = null;
   }
 
+  // --- Smart Sizing Logic ---
+  const nW = target.naturalWidth || target.width || 800;
+  const nH = target.naturalHeight || target.height || 600;
+  const sW = window.screen.availWidth;
+  const sH = window.screen.availHeight;
+
+  let finalW, finalH;
+
+  if (settings.pipInitialSize === 'actual') {
+      finalW = Math.min(nW, sW * 0.9);
+      finalH = Math.min(nH, sH * 0.9);
+  } else if (settings.pipInitialSize === 'fit') {
+      const ratio = nW / nH;
+      if (ratio > 1) { // Landscape
+          finalW = sW * 0.8;
+          finalH = finalW / ratio;
+      } else { // Portrait
+          finalH = sH * 0.8;
+          finalW = finalH * ratio;
+      }
+  } else {
+      // Half (Default)
+      finalW = Math.max(300, nW / 2);
+      finalH = Math.max(200, nH / 2);
+  }
+
   try {
     State.pipWindow = await window.documentPictureInPicture.requestWindow({
-      width: (target.naturalWidth || target.width) / 2 || 500,
-      height: (target.naturalHeight || target.height) / 2 || 500
+      width: Math.round(finalW),
+      height: Math.round(finalH)
     });
 
     const doc = State.pipWindow.document;
@@ -261,7 +288,7 @@ async function launchImagePiP() {
     contentEl.id = "fullpip-live-content";
     doc.body.append(contentEl);
     
-    setupZoomAndPan(contentEl, settings);
+    setupZoomAndPan(contentEl, settings, State.pipWindow);
 
     State.pipWindow.addEventListener("pagehide", cleanupPipState);
 
@@ -270,7 +297,7 @@ async function launchImagePiP() {
   }
 }
 
-// --- Logic: Sync & Optimization ---
+// --- Logic: Sync ---
 function setupLiveSync(sourceNode, pipImgNode) {
   if (State.observer) State.observer.disconnect();
 
@@ -297,7 +324,7 @@ function cleanupPipState() {
   State.observer = null;
 }
 
-// --- Logic: Styling & UI ---
+// --- Logic: Styling ---
 function setupPipStyles(doc, sourceNode, bgSetting) {
   let bgColor = '#000';
   let bgImage = 'none';
@@ -313,7 +340,6 @@ function setupPipStyles(doc, sourceNode, bgSetting) {
                  linear-gradient(-45deg, transparent 75%, #ccc 75%)`;
       bgSize = '20px 20px';
   } else {
-    // Auto
     try {
         if (sourceNode && sourceNode.parentElement) {
            bgColor = window.getComputedStyle(sourceNode.parentElement).backgroundColor;
@@ -330,45 +356,64 @@ function setupPipStyles(doc, sourceNode, bgSetting) {
       background-image: ${bgImage};
       background-size: ${bgSize};
       background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
-      height: 100vh; 
+      height: 100vh; width: 100vw;
       display: flex; justify-content: center; align-items: center; 
       overflow: hidden; 
     }
     img, video { 
+      display: block;
       width: 100%; height: 100%; object-fit: contain; 
-      user-select: none;
+      user-select: none; will-change: transform;
     }
   `;
   doc.head.append(style);
 }
 
-// --- Logic: Interactive Zoom/Pan ---
-function setupZoomAndPan(img, settings) {
+// --- Logic: Advanced Zoom/Pan ---
+function setupZoomAndPan(img, settings, pipWin) {
   let scale = 1;
   let pX = 0, pY = 0;
   let startX = 0, startY = 0;
   let basePx = 0, basePy = 0;
   let isDragging = false;
+  let rafId = null;
 
   img.addEventListener('dragstart', (e) => e.preventDefault());
 
+  // Render Loop for Smoothness
   const updateTransform = () => {
-    img.style.transform = `scale(${scale}) translate(${pX}px, ${pY}px)`;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(() => {
+        img.style.transform = `scale(${scale}) translate(${pX}px, ${pY}px)`;
+    });
   };
 
-  // Zoom Logic
+  // Zoom
   img.addEventListener('wheel', (e) => {
     e.preventDefault();
-    // Check Invert Zoom Setting
-    let direction = e.deltaY > 0 ? 0.9 : 1.1;
-    if (settings.pipInvertZoom) direction = e.deltaY > 0 ? 1.1 : 0.9;
+    const speed = parseFloat(settings.pipZoomSpeed) || 1.0;
+    const direction = e.deltaY > 0 ? (0.9 * (1/speed)) : (1.1 * speed);
     
-    scale *= direction;
-    scale = Math.max(0.1, scale); 
+    // Safety clamp for speed
+    const safeFactor = e.deltaY > 0 ? Math.max(0.5, 1 - (0.1 * speed)) : Math.min(2, 1 + (0.1 * speed));
+    
+    let newScale = scale * safeFactor;
+
+    // Smart Limit (Fit to screen)
+    if (settings.pipZoomSmartLimit) {
+        // Calculate min scale to fit window
+        // But object-fit: contain already fits it. 
+        // So scale=1 is "fit". We shouldn't go much below 0.5 or 0.1
+        newScale = Math.max(0.1, newScale);
+    } else {
+        newScale = Math.max(0.01, newScale);
+    }
+    
+    scale = newScale;
     updateTransform();
   }, { passive: false });
 
-  // Pan Logic (Only if not Locked)
+  // Pan
   if (!settings.pipLockPan) {
       img.addEventListener('pointerdown', (e) => {
         isDragging = true;
@@ -386,12 +431,27 @@ function setupZoomAndPan(img, settings) {
         if (!isDragging) return;
         e.preventDefault();
         
-        const deltaX = e.clientX - startX;
-        const deltaY = e.clientY - startY;
+        const deltaX = (e.clientX - startX);
+        const deltaY = (e.clientY - startY);
 
-        pX = basePx + (deltaX / scale);
-        pY = basePy + (deltaY / scale);
-        
+        let nextPx = basePx + (deltaX / scale);
+        let nextPy = basePy + (deltaY / scale);
+
+        // Edge Lock (Resistance) logic
+        if (settings.pipEdgeLock) {
+            // Keep center point somewhat on screen
+            // Viewport dimensions in Image Space
+            const vpW = pipWin.innerWidth / scale;
+            const vpH = pipWin.innerHeight / scale;
+            
+            // Limit pan so that center doesn't go too far
+            // We allow center to go to edge of viewport
+            nextPx = Math.max(-vpW/1.5, Math.min(vpW/1.5, nextPx));
+            nextPy = Math.max(-vpH/1.5, Math.min(vpH/1.5, nextPy));
+        }
+
+        pX = nextPx;
+        pY = nextPy;
         updateTransform();
       });
 
@@ -410,20 +470,20 @@ function setupZoomAndPan(img, settings) {
       img.style.cursor = 'default';
   }
 
-  // Reset Logic
-  if (settings.pipDblClickReset) {
-      img.addEventListener('dblclick', () => {
-          scale = 1;
-          pX = 0;
-          pY = 0;
-          updateTransform();
-      });
-  }
+  // Double Click Reset
+  img.addEventListener('dblclick', () => {
+      scale = 1;
+      pX = 0;
+      pY = 0;
+      updateTransform();
+  });
 }
 
 function extractBgImage(node) {
+  // Regex Fix: Better quote handling
   const bg = getComputedStyle(node).backgroundImage;
-  return (bg.match(/url\(['"]?([^'"]*)['"]?\)/) || [])[1] || "";
+  const match = bg.match(/url\(['"]?(.*?)['"]?\)/);
+  return match ? match[1] : "";
 }
 
 // --- Auto-PiP Engine ---

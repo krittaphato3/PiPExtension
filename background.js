@@ -1,7 +1,7 @@
 /**
  * @file background.js
  * @author krittaphato3
- * @desc Production-ready service worker. Handles IPC, Context Menus, and Shortcuts.
+ * @desc Production-ready service worker.
  */
 
 const MENUS = {
@@ -40,7 +40,6 @@ chrome.commands.onCommand.addListener((command) => {
   }
 });
 
-// Helper: Safe Message Dispatch
 function dispatchToContent(tabId, action, data) {
   chrome.tabs.sendMessage(tabId, { action, ...data }).catch(err => {
     console.debug(`[FullPiP] IPC Handshake failed: ${err.message}`);
