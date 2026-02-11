@@ -82,14 +82,12 @@ els.themeBtn.addEventListener('click', () => {
 // --- ADVANCED MEDIA SCANNER ---
 // This injects a script into ALL frames to find videos
 function scanForMediaInFrame() {
-    // Helper to identify "Real" videos
     const getMediaInfo = (el) => {
         const rect = el.getBoundingClientRect();
         // FILTER: Ignore tiny invisible videos (ads/trackers)
         if (rect.width < 50 || rect.height < 50) return null;
-        if (el.style.display === 'none' || el.style.visibility === 'hidden') return null;
+        if (getComputedStyle(el).display === 'none' || getComputedStyle(el).visibility === 'hidden') return null;
         
-        // SNAPSHOT: Create a tiny thumbnail
         let thumbnail = null;
         try {
             if (el.tagName === 'VIDEO' && el.readyState >= 2) {
@@ -99,9 +97,9 @@ function scanForMediaInFrame() {
                 canvas.getContext('2d').drawImage(el, 0, 0, canvas.width, canvas.height);
                 thumbnail = canvas.toDataURL('image/jpeg', 0.5);
             }
-        } catch(e) { /* CORS protection might block this */ }
+        } catch(e) { /* CORS block */ }
 
-        // SMART TITLE: Try to find a label
+        // Smart Title
         let title = document.title;
         const aria = el.getAttribute('aria-label') || el.getAttribute('title');
         if (aria) title = aria;
@@ -121,10 +119,9 @@ function scanForMediaInFrame() {
         };
     };
 
-    // Deep scan for Shadow DOM
     const findAllMedia = (root = document) => {
         let media = Array.from(root.querySelectorAll('video, audio'));
-        // Try to verify custom elements or shadow roots (basic check)
+        // Basic Shadow DOM Scan
         const allNodes = root.querySelectorAll('*');
         for (const node of allNodes) {
             if (node.shadowRoot) {
@@ -148,12 +145,10 @@ chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
             func: scanForMediaInFrame
         });
 
-        // Flatten results from all frames
         const allMedia = [];
         results.forEach(frameResult => {
             if (frameResult.result) {
                 frameResult.result.forEach(item => {
-                    // Attach frameId so we know where to send commands
                     item.frameId = frameResult.frameId; 
                     allMedia.push(item);
                 });
@@ -177,7 +172,7 @@ function renderMediaList(mediaItems, container, tabId) {
         return;
     }
     
-    // Sort: Playing videos first, then by size (approximated by assuming main content is usually first found)
+    // Sort: Playing first
     mediaItems.sort((a, b) => (a.paused === b.paused) ? 0 : a.paused ? 1 : -1);
 
     mediaItems.forEach(media => {
@@ -217,11 +212,10 @@ function renderMediaList(mediaItems, container, tabId) {
             </div>
         `;
 
-        // Interactions
         const playBtn = div.querySelector('.play-btn');
         const pipBtn = div.querySelector('.pip-btn');
         
-        // Highlight on Hover
+        // Highlight logic
         div.addEventListener('mouseenter', () => {
             chrome.tabs.sendMessage(tabId, { action: "highlightMedia", id: media.pipId, active: true }, { frameId: media.frameId });
         });
@@ -231,7 +225,6 @@ function renderMediaList(mediaItems, container, tabId) {
 
         playBtn.onclick = () => {
             chrome.tabs.sendMessage(tabId, { action: "controlMedia", id: media.pipId, command: "togglePlay" }, { frameId: media.frameId });
-            // Optimistic Toggle
             const isPaused = playBtn.innerHTML.includes('rect'); 
             playBtn.innerHTML = isPaused ? playIcon : pauseIcon;
         };

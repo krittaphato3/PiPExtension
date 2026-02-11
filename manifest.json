@@ -3,7 +3,7 @@
   "name": "FullPiP - Ultimate Picture-in-Picture",
   "version": "2.3.0",
   "author": "krittaphato3",
-  "description": "Professional-grade PiP tool. Smart sizing, iframe support, and live thumbnails.",
+  "description": "Professional-grade PiP tool. Multi-frame detection, smart constraints, and live thumbnails.",
   "permissions": [
     "contextMenus",
     "storage",

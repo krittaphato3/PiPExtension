@@ -25,7 +25,7 @@ body {
     color: var(--text-head);
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     margin: 0;
-    width: 340px; /* Widened slightly for thumbnails */
+    width: 340px; 
     padding: 20px;
     transition: background-color 0.3s var(--ease);
 }
@@ -127,7 +127,7 @@ input:checked + .slider:before { transform: translateX(18px); }
     box-shadow: 0 0 10px var(--accent-glow);
 }
 
-/* NEW Media List Styling */
+/* Media List */
 .media-header {
     margin: 16px 0 8px 0;
     font-size: 11px;
@@ -150,7 +150,6 @@ input:checked + .slider:before { transform: translateX(18px); }
 }
 .media-item:hover { border-color: var(--text-sub); }
 
-/* Thumbnails */
 .media-thumb {
     width: 48px;
     height: 32px;

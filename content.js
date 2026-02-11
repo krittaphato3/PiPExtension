@@ -1,7 +1,7 @@
 /**
  * @file content.js
  * @author krittaphato3
- * @desc High-performance DOM agent. Features ShadowDOM piercing and Highlight logic.
+ * @desc High-performance DOM agent. Fixed ShadowDOM interaction for controls.
  */
 
 // --- State Management ---
@@ -32,18 +32,37 @@ const getMediaId = (el) => {
   return el.dataset.pipId;
 };
 
+// --- HELPER: Deep Scan for Shadow DOM ---
+// This allows us to find videos hidden inside custom components
+const getAllMediaDeep = (root = document) => {
+    let media = Array.from(root.querySelectorAll('video, audio'));
+    // Walk through all elements to check for shadow roots
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+    let node;
+    while(node = walker.nextNode()) {
+        if (node.shadowRoot) {
+            media = media.concat(getAllMediaDeep(node.shadowRoot));
+        }
+    }
+    return media;
+};
+
+// Find element by ID anywhere in the DOM (including Shadow DOM)
+const findMediaById = (id) => {
+    // 1. Check Cache
+    if (mediaMap.has(id)) return mediaMap.get(id);
+    
+    // 2. Deep Scan
+    const all = getAllMediaDeep(document);
+    const found = all.find(el => el.dataset.pipId === id);
+    
+    // 3. Update Cache
+    if (found) mediaMap.set(id, found);
+    return found;
+};
+
 const findMainVideo = () => {
-  // Use a recursive search for Shadow DOM
-  const scan = (root) => {
-      let vids = Array.from(root.querySelectorAll('video'));
-      root.querySelectorAll('*').forEach(el => {
-          if (el.shadowRoot) vids = vids.concat(scan(el.shadowRoot));
-      });
-      return vids;
-  };
-  
-  const videos = scan(document);
-  const visible = videos.filter(v => {
+  const visible = getAllMediaDeep(document).filter(v => {
     const r = v.getBoundingClientRect();
     return r.width > 20 && r.height > 20 && 
            getComputedStyle(v).display !== 'none' && 
@@ -81,17 +100,9 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
       togglePickerMode();
       break;
     
-    // NOTE: getMediaList is now handled by executeScript in popup.js
-    // but we keep the map population for consistency if needed.
-    
+    // --- FIXED CONTROL LOGIC ---
     case "controlMedia":
-      // Re-scan or find by ID
-      let el = mediaMap.get(req.id);
-      if (!el) {
-         // Fallback: Try to find by ID again (in case map was cleared)
-         const allVids = document.querySelectorAll('video, audio');
-         for (const v of allVids) { if (v.dataset.pipId === req.id) el = v; }
-      }
+      const el = findMediaById(req.id); // Use the Deep Search
 
       if (el) {
         if (req.command === 'pip') {
@@ -100,15 +111,13 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         } else if (req.command === 'togglePlay') {
           el.paused ? el.play() : el.pause();
         }
+      } else {
+          console.warn(`[FullPiP] Media ID ${req.id} not found in this frame.`);
       }
       break;
 
     case "highlightMedia":
-        let hEl = mediaMap.get(req.id);
-        if (!hEl) {
-             const allVids = document.querySelectorAll('video, audio');
-             for (const v of allVids) { if (v.dataset.pipId === req.id) hEl = v; }
-        }
+        const hEl = findMediaById(req.id); // Use the Deep Search
         if (hEl) {
             if (req.active) {
                 hEl.style.outline = "4px solid #3b82f6";
@@ -193,7 +202,6 @@ async function launchElementPiP(sourceNode) {
 
     const doc = State.pipWindow.document;
     
-    // Copy Styles
     Array.from(document.styleSheets).forEach(styleSheet => {
       try {
         if (styleSheet.href) {
@@ -267,7 +275,6 @@ async function launchImagePiP() {
     State.pipWindow = null;
   }
 
-  // --- Smart Sizing Logic ---
   const nW = target.naturalWidth || target.width || 800;
   const nH = target.naturalHeight || target.height || 600;
   const sW = window.screen.availWidth;
@@ -288,7 +295,6 @@ async function launchImagePiP() {
           finalW = finalH * ratio;
       }
   } else {
-      // Half (Default)
       finalW = Math.max(300, nW / 2);
       finalH = Math.max(200, nH / 2);
   }
@@ -403,6 +409,14 @@ function setupZoomAndPan(img, settings, pipWin) {
   let basePx = 0, basePy = 0;
   let isDragging = false;
   let rafId = null;
+  
+  // Track window size for accurate locking
+  let winW = pipWin.innerWidth;
+  let winH = pipWin.innerHeight;
+  pipWin.addEventListener('resize', () => {
+      winW = pipWin.innerWidth;
+      winH = pipWin.innerHeight;
+  });
 
   img.addEventListener('dragstart', (e) => e.preventDefault());
 
@@ -451,10 +465,12 @@ function setupZoomAndPan(img, settings, pipWin) {
         let nextPy = basePy + (deltaY / scale);
 
         if (settings.pipEdgeLock) {
-            const vpW = pipWin.innerWidth / scale;
-            const vpH = pipWin.innerHeight / scale;
-            nextPx = Math.max(-vpW/1.5, Math.min(vpW/1.5, nextPx));
-            nextPy = Math.max(-vpH/1.5, Math.min(vpH/1.5, nextPy));
+            // FIX: Ensure center of image stays within viewport bounds
+            const limitX = (winW / 2) / scale;
+            const limitY = (winH / 2) / scale;
+            
+            nextPx = Math.max(-limitX, Math.min(limitX, nextPx));
+            nextPy = Math.max(-limitY, Math.min(limitY, nextPy));
         }
 
         pX = nextPx;
