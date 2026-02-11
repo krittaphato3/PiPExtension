@@ -1,7 +1,7 @@
 /**
  * @file content.js
  * @author krittaphato3
- * @desc High-performance DOM agent. Features debounce logic, RAF rendering, and crash protection.
+ * @desc High-performance DOM agent. Features ShadowDOM piercing and Highlight logic.
  */
 
 // --- State Management ---
@@ -33,10 +33,19 @@ const getMediaId = (el) => {
 };
 
 const findMainVideo = () => {
-  const videos = Array.from(document.querySelectorAll('video'));
+  // Use a recursive search for Shadow DOM
+  const scan = (root) => {
+      let vids = Array.from(root.querySelectorAll('video'));
+      root.querySelectorAll('*').forEach(el => {
+          if (el.shadowRoot) vids = vids.concat(scan(el.shadowRoot));
+      });
+      return vids;
+  };
+  
+  const videos = scan(document);
   const visible = videos.filter(v => {
     const r = v.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && 
+    return r.width > 20 && r.height > 20 && 
            getComputedStyle(v).display !== 'none' && 
            getComputedStyle(v).visibility !== 'hidden';
   });
@@ -71,19 +80,19 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     case "togglePickerMode":
       togglePickerMode();
       break;
-    case "getMediaList":
-      const list = Array.from(document.querySelectorAll('video, audio')).map(el => ({
-        id: getMediaId(el),
-        type: el.tagName.toLowerCase(),
-        src: el.currentSrc || el.src,
-        paused: el.paused,
-        currentTime: el.currentTime,
-        duration: el.duration
-      }));
-      sendResponse(list);
-      return true; 
+    
+    // NOTE: getMediaList is now handled by executeScript in popup.js
+    // but we keep the map population for consistency if needed.
+    
     case "controlMedia":
-      const el = mediaMap.get(req.id);
+      // Re-scan or find by ID
+      let el = mediaMap.get(req.id);
+      if (!el) {
+         // Fallback: Try to find by ID again (in case map was cleared)
+         const allVids = document.querySelectorAll('video, audio');
+         for (const v of allVids) { if (v.dataset.pipId === req.id) el = v; }
+      }
+
       if (el) {
         if (req.command === 'pip') {
             if (document.pictureInPictureElement === el) document.exitPictureInPicture();
@@ -93,6 +102,26 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
         }
       }
       break;
+
+    case "highlightMedia":
+        let hEl = mediaMap.get(req.id);
+        if (!hEl) {
+             const allVids = document.querySelectorAll('video, audio');
+             for (const v of allVids) { if (v.dataset.pipId === req.id) hEl = v; }
+        }
+        if (hEl) {
+            if (req.active) {
+                hEl.style.outline = "4px solid #3b82f6";
+                hEl.style.outlineOffset = "-4px";
+                hEl.style.boxShadow = "0 0 20px rgba(59, 130, 246, 0.6)";
+                hEl.scrollIntoView({behavior: "smooth", block: "center"});
+            } else {
+                hEl.style.outline = "";
+                hEl.style.outlineOffset = "";
+                hEl.style.boxShadow = "";
+            }
+        }
+        break;
   }
 });
 
@@ -146,7 +175,7 @@ function handlePickerKey(e) {
   }
 }
 
-// --- Element PiP ---
+// --- Element PiP (Live Image) ---
 async function launchElementPiP(sourceNode) {
   if (!window.documentPictureInPicture) return;
   
@@ -164,7 +193,7 @@ async function launchElementPiP(sourceNode) {
 
     const doc = State.pipWindow.document;
     
-    // Clone Styles
+    // Copy Styles
     Array.from(document.styleSheets).forEach(styleSheet => {
       try {
         if (styleSheet.href) {
@@ -297,7 +326,6 @@ async function launchImagePiP() {
   }
 }
 
-// --- Logic: Sync ---
 function setupLiveSync(sourceNode, pipImgNode) {
   if (State.observer) State.observer.disconnect();
 
@@ -324,7 +352,6 @@ function cleanupPipState() {
   State.observer = null;
 }
 
-// --- Logic: Styling ---
 function setupPipStyles(doc, sourceNode, bgSetting) {
   let bgColor = '#000';
   let bgImage = 'none';
@@ -369,7 +396,6 @@ function setupPipStyles(doc, sourceNode, bgSetting) {
   doc.head.append(style);
 }
 
-// --- Logic: Advanced Zoom/Pan ---
 function setupZoomAndPan(img, settings, pipWin) {
   let scale = 1;
   let pX = 0, pY = 0;
@@ -380,7 +406,6 @@ function setupZoomAndPan(img, settings, pipWin) {
 
   img.addEventListener('dragstart', (e) => e.preventDefault());
 
-  // Render Loop for Smoothness
   const updateTransform = () => {
     if (rafId) cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(() => {
@@ -388,22 +413,14 @@ function setupZoomAndPan(img, settings, pipWin) {
     });
   };
 
-  // Zoom
   img.addEventListener('wheel', (e) => {
     e.preventDefault();
     const speed = parseFloat(settings.pipZoomSpeed) || 1.0;
     const direction = e.deltaY > 0 ? (0.9 * (1/speed)) : (1.1 * speed);
-    
-    // Safety clamp for speed
     const safeFactor = e.deltaY > 0 ? Math.max(0.5, 1 - (0.1 * speed)) : Math.min(2, 1 + (0.1 * speed));
-    
     let newScale = scale * safeFactor;
 
-    // Smart Limit (Fit to screen)
     if (settings.pipZoomSmartLimit) {
-        // Calculate min scale to fit window
-        // But object-fit: contain already fits it. 
-        // So scale=1 is "fit". We shouldn't go much below 0.5 or 0.1
         newScale = Math.max(0.1, newScale);
     } else {
         newScale = Math.max(0.01, newScale);
@@ -413,39 +430,29 @@ function setupZoomAndPan(img, settings, pipWin) {
     updateTransform();
   }, { passive: false });
 
-  // Pan
   if (!settings.pipLockPan) {
       img.addEventListener('pointerdown', (e) => {
         isDragging = true;
         img.setPointerCapture(e.pointerId);
-        
         startX = e.clientX;
         startY = e.clientY;
         basePx = pX;
         basePy = pY;
-        
         img.style.cursor = 'grabbing';
       });
 
       img.addEventListener('pointermove', (e) => {
         if (!isDragging) return;
         e.preventDefault();
-        
         const deltaX = (e.clientX - startX);
         const deltaY = (e.clientY - startY);
 
         let nextPx = basePx + (deltaX / scale);
         let nextPy = basePy + (deltaY / scale);
 
-        // Edge Lock (Resistance) logic
         if (settings.pipEdgeLock) {
-            // Keep center point somewhat on screen
-            // Viewport dimensions in Image Space
             const vpW = pipWin.innerWidth / scale;
             const vpH = pipWin.innerHeight / scale;
-            
-            // Limit pan so that center doesn't go too far
-            // We allow center to go to edge of viewport
             nextPx = Math.max(-vpW/1.5, Math.min(vpW/1.5, nextPx));
             nextPy = Math.max(-vpH/1.5, Math.min(vpH/1.5, nextPy));
         }
@@ -470,7 +477,6 @@ function setupZoomAndPan(img, settings, pipWin) {
       img.style.cursor = 'default';
   }
 
-  // Double Click Reset
   img.addEventListener('dblclick', () => {
       scale = 1;
       pX = 0;
@@ -480,7 +486,6 @@ function setupZoomAndPan(img, settings, pipWin) {
 }
 
 function extractBgImage(node) {
-  // Regex Fix: Better quote handling
   const bg = getComputedStyle(node).backgroundImage;
   const match = bg.match(/url\(['"]?(.*?)['"]?\)/);
   return match ? match[1] : "";

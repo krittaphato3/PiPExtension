@@ -1,17 +1,13 @@
 /**
  * @file popup.js
- * @desc UI Logic: Settings Persistence and Media Scanning
+ * @desc Advanced Media Scanner with Frame Support & Thumbnails
  */
 
 const KEYS = { 
     THEME: 'themePref',
     AUTO_PIP: 'autoPipEnabled',
-    
-    // Viewer Behavior
     INITIAL_SIZE: 'pipInitialSize',
     BG_COLOR: 'pipBackgroundColor',
-    
-    // Interaction
     LOCK_PAN: 'pipLockPan',
     EDGE_LOCK: 'pipEdgeLock',
     ZOOM_SMART_LIMIT: 'pipZoomSmartLimit',
@@ -28,7 +24,7 @@ const DEFAULTS = {
     [KEYS.ZOOM_SPEED]: 1.0
 };
 
-// UI Element Map
+// UI Map
 const els = {
     themeBtn: document.getElementById('themeBtn'),
     body: document.body,
@@ -52,31 +48,21 @@ const ICONS = {
 // --- Initialization ---
 chrome.storage.sync.get(null, (items) => {
     applyTheme(items[KEYS.THEME] || 'dark');
-
     Object.keys(els.inputs).forEach(key => {
         const val = items[key] !== undefined ? items[key] : DEFAULTS[key];
         const el = els.inputs[key];
-        
         if (el.type === 'checkbox') el.checked = val;
         else el.value = val;
-        
         if (key === KEYS.ZOOM_SPEED) els.speedLabel.innerText = val + 'x';
     });
 });
 
-// --- Event Listeners: Settings ---
 Object.keys(els.inputs).forEach(key => {
-    els.inputs[key].addEventListener('input', (e) => { // Use 'input' for sliders
+    els.inputs[key].addEventListener('input', (e) => {
         const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-        
         if (key === KEYS.ZOOM_SPEED) els.speedLabel.innerText = val + 'x';
-        
-        // Debounce storage writes for sliders
-        if (e.target.type === 'range') {
-            saveDebounced(key, val);
-        } else {
-            chrome.storage.sync.set({ [key]: val });
-        }
+        if (e.target.type === 'range') saveDebounced(key, val);
+        else chrome.storage.sync.set({ [key]: val });
     });
 });
 
@@ -93,70 +79,174 @@ els.themeBtn.addEventListener('click', () => {
     chrome.storage.sync.set({ [KEYS.THEME]: newTheme });
 });
 
-// --- Media Scanner ---
-chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs[0]?.id) return;
-    
-    chrome.tabs.sendMessage(tabs[0].id, { action: "getMediaList" }, (response) => {
-        const listEl = document.getElementById('media-list');
-        if (chrome.runtime.lastError || !response || response.length === 0) {
-            listEl.innerHTML = '<div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">No media found on this page.</div>';
-            return;
+// --- ADVANCED MEDIA SCANNER ---
+// This injects a script into ALL frames to find videos
+function scanForMediaInFrame() {
+    // Helper to identify "Real" videos
+    const getMediaInfo = (el) => {
+        const rect = el.getBoundingClientRect();
+        // FILTER: Ignore tiny invisible videos (ads/trackers)
+        if (rect.width < 50 || rect.height < 50) return null;
+        if (el.style.display === 'none' || el.style.visibility === 'hidden') return null;
+        
+        // SNAPSHOT: Create a tiny thumbnail
+        let thumbnail = null;
+        try {
+            if (el.tagName === 'VIDEO' && el.readyState >= 2) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 160;
+                canvas.height = 90;
+                canvas.getContext('2d').drawImage(el, 0, 0, canvas.width, canvas.height);
+                thumbnail = canvas.toDataURL('image/jpeg', 0.5);
+            }
+        } catch(e) { /* CORS protection might block this */ }
+
+        // SMART TITLE: Try to find a label
+        let title = document.title;
+        const aria = el.getAttribute('aria-label') || el.getAttribute('title');
+        if (aria) title = aria;
+
+        return {
+            pipId: el.dataset.pipId || (el.dataset.pipId = Math.random().toString(36).substr(2, 9)),
+            type: el.tagName.toLowerCase(),
+            src: el.currentSrc || el.src,
+            paused: el.paused,
+            currentTime: el.currentTime,
+            duration: el.duration,
+            volume: el.volume,
+            muted: el.muted,
+            thumbnail: thumbnail,
+            pageTitle: title,
+            isIframe: window !== window.top
+        };
+    };
+
+    // Deep scan for Shadow DOM
+    const findAllMedia = (root = document) => {
+        let media = Array.from(root.querySelectorAll('video, audio'));
+        // Try to verify custom elements or shadow roots (basic check)
+        const allNodes = root.querySelectorAll('*');
+        for (const node of allNodes) {
+            if (node.shadowRoot) {
+                media = media.concat(findAllMedia(node.shadowRoot));
+            }
         }
-        renderMediaList(response, listEl, tabs[0].id);
-    });
+        return media;
+    };
+
+    return findAllMedia().map(getMediaInfo).filter(x => x !== null);
+}
+
+// Execute the scan
+chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+    if (!tabs[0]?.id) return;
+    const tabId = tabs[0].id;
+
+    try {
+        const results = await chrome.scripting.executeScript({
+            target: { tabId: tabId, allFrames: true },
+            func: scanForMediaInFrame
+        });
+
+        // Flatten results from all frames
+        const allMedia = [];
+        results.forEach(frameResult => {
+            if (frameResult.result) {
+                frameResult.result.forEach(item => {
+                    // Attach frameId so we know where to send commands
+                    item.frameId = frameResult.frameId; 
+                    allMedia.push(item);
+                });
+            }
+        });
+
+        renderMediaList(allMedia, document.getElementById('media-list'), tabId);
+
+    } catch (e) {
+        console.error("Scan failed", e);
+        document.getElementById('media-list').innerHTML = 
+            '<div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">Restricted page or loading...</div>';
+    }
 });
 
 function renderMediaList(mediaItems, container, tabId) {
     container.innerHTML = '';
+
+    if (mediaItems.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">No playable media found.</div>';
+        return;
+    }
     
+    // Sort: Playing videos first, then by size (approximated by assuming main content is usually first found)
+    mediaItems.sort((a, b) => (a.paused === b.paused) ? 0 : a.paused ? 1 : -1);
+
     mediaItems.forEach(media => {
         const div = document.createElement('div');
         div.className = 'media-item';
         
-        const isVideo = media.type === 'video';
-        const icon = isVideo 
-            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>'
-            : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
+        // Thumb or Icon
+        let visual = '';
+        if (media.thumbnail) {
+            visual = `<div class="media-thumb" style="background-image: url('${media.thumbnail}')"></div>`;
+        } else {
+            const iconSvg = media.type === 'video' 
+                ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><polygon points="10 8 16 11 10 14 10 8" fill="currentColor" stroke="none"/></svg>'
+                : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
+            visual = `<div class="media-icon-placeholder">${iconSvg}</div>`;
+        }
 
         const playIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
         const pauseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
         const pipIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>'; 
 
         const time = formatTime(media.currentTime) + (media.duration ? ' / ' + formatTime(media.duration) : '');
+        const titleText = media.pageTitle === 'FullPiP Control Center' ? 'Unknown Video' : media.pageTitle;
+        const subText = media.isIframe ? `<span style="color:var(--accent)">Embedded Frame</span> • ${time}` : time;
 
         div.innerHTML = `
+            ${visual}
             <div class="media-info">
-                <div class="media-title" style="display: flex; align-items: center; gap: 6px;">
-                    ${icon} <span>${isVideo ? 'Video Player' : 'Audio Player'}</span>
-                </div>
-                <div class="media-meta">${time}</div>
+                <div class="media-title">${titleText}</div>
+                <div class="media-meta">${subText}</div>
             </div>
             <div class="media-controls">
-                <button class="btn-icon" title="${media.paused ? 'Play' : 'Pause'}">
+                <button class="btn-icon play-btn" title="${media.paused ? 'Play' : 'Pause'}">
                     ${media.paused ? playIcon : pauseIcon}
                 </button>
-                ${isVideo ? `<button class="btn-icon pip-btn" title="Picture-in-Picture">${pipIcon}</button>` : ''}
+                ${media.type === 'video' ? `<button class="btn-icon pip-btn" title="Picture-in-Picture">${pipIcon}</button>` : ''}
             </div>
         `;
 
-        const [playBtn, pipBtn] = div.querySelectorAll('button');
+        // Interactions
+        const playBtn = div.querySelector('.play-btn');
+        const pipBtn = div.querySelector('.pip-btn');
         
+        // Highlight on Hover
+        div.addEventListener('mouseenter', () => {
+            chrome.tabs.sendMessage(tabId, { action: "highlightMedia", id: media.pipId, active: true }, { frameId: media.frameId });
+        });
+        div.addEventListener('mouseleave', () => {
+            chrome.tabs.sendMessage(tabId, { action: "highlightMedia", id: media.pipId, active: false }, { frameId: media.frameId });
+        });
+
         playBtn.onclick = () => {
-            chrome.tabs.sendMessage(tabId, { action: "controlMedia", id: media.id, command: "togglePlay" });
+            chrome.tabs.sendMessage(tabId, { action: "controlMedia", id: media.pipId, command: "togglePlay" }, { frameId: media.frameId });
+            // Optimistic Toggle
             const isPaused = playBtn.innerHTML.includes('rect'); 
             playBtn.innerHTML = isPaused ? playIcon : pauseIcon;
         };
 
         if (pipBtn) {
-            pipBtn.onclick = () => chrome.tabs.sendMessage(tabId, { action: "controlMedia", id: media.id, command: "pip" });
+            pipBtn.onclick = () => chrome.tabs.sendMessage(tabId, { action: "controlMedia", id: media.pipId, command: "pip" }, { frameId: media.frameId });
         }
+
         container.appendChild(div);
     });
 }
 
 function formatTime(seconds) {
     if (!seconds) return '0:00';
+    if (seconds === Infinity) return 'Live';
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
