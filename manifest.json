@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "FullPiP - Ultimate Picture-in-Picture",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "author": "krittaphato3",
-  "description": "Professional-grade PiP tool. Multi-frame detection, smart constraints, and live thumbnails.",
+  "description": "Professional-grade PiP tool. Memory optimized, multi-frame support, and smart thumbnails.",
   "permissions": [
     "contextMenus",
     "storage",

@@ -9,13 +9,11 @@ const MENUS = {
   IMAGE: "fullpip-image"
 };
 
-// Initialization
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({ id: MENUS.VIDEO, title: "FullPiP: Pop Video", contexts: ["video"] });
   chrome.contextMenus.create({ id: MENUS.IMAGE, title: "FullPiP: Pop Live Image", contexts: ["image"] });
 });
 
-// Context Menu Handler
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab?.id) return;
 
@@ -27,7 +25,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   dispatchToContent(tab.id, "contextMenuTrigger", payload);
 });
 
-// Keyboard Shortcut Handler
 chrome.commands.onCommand.addListener((command) => {
   if (command === "toggle-pip") {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {

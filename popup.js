@@ -1,6 +1,6 @@
 /**
  * @file popup.js
- * @desc Advanced Media Scanner with Frame Support & Thumbnails
+ * @desc Advanced Media Scanner with Tainted Canvas Protection & Shorts Support
  */
 
 const KEYS = { 
@@ -79,51 +79,82 @@ els.themeBtn.addEventListener('click', () => {
     chrome.storage.sync.set({ [KEYS.THEME]: newTheme });
 });
 
-// --- ADVANCED MEDIA SCANNER ---
-// This injects a script into ALL frames to find videos
+// --- SAFE MEDIA SCANNER ---
+// Runs inside the web page to find videos
 function scanForMediaInFrame() {
     const getMediaInfo = (el) => {
-        const rect = el.getBoundingClientRect();
-        // FILTER: Ignore tiny invisible videos (ads/trackers)
-        if (rect.width < 50 || rect.height < 50) return null;
-        if (getComputedStyle(el).display === 'none' || getComputedStyle(el).visibility === 'hidden') return null;
-        
-        let thumbnail = null;
         try {
+            const rect = el.getBoundingClientRect();
+            // Loose Filter: Accepts small videos too (often used in custom players)
+            if (rect.width < 1 || rect.height < 1) return null;
+            if (getComputedStyle(el).display === 'none') return null;
+            
+            let thumbnail = null;
+            let isPortrait = false;
+
+            // --- Smart Thumbnail Generation ---
             if (el.tagName === 'VIDEO' && el.readyState >= 2) {
-                const canvas = document.createElement('canvas');
-                canvas.width = 160;
-                canvas.height = 90;
-                canvas.getContext('2d').drawImage(el, 0, 0, canvas.width, canvas.height);
-                thumbnail = canvas.toDataURL('image/jpeg', 0.5);
+                const w = el.videoWidth || rect.width;
+                const h = el.videoHeight || rect.height;
+                isPortrait = h > w; // Detect Shorts/Reels
+
+                try {
+                    const canvas = document.createElement('canvas');
+                    // Create optimized thumbnail size
+                    if (isPortrait) {
+                        canvas.width = 54; 
+                        canvas.height = 96;
+                    } else {
+                        canvas.width = 96;
+                        canvas.height = 54;
+                    }
+                    
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
+                    
+                    // PROTECTED CALL: This line will crash on abyss.to if not wrapped
+                    thumbnail = canvas.toDataURL('image/jpeg', 0.5);
+                } catch(err) {
+                    // Security Error (Tainted Canvas). 
+                    // Fallback to the 'poster' image if available.
+                    if (el.poster) thumbnail = el.poster;
+                    else thumbnail = null; 
+                }
+            } else if (el.tagName === 'VIDEO' && el.poster) {
+                // Video not loaded yet, but has poster
+                thumbnail = el.poster;
             }
-        } catch(e) { /* CORS block */ }
 
-        // Smart Title
-        let title = document.title;
-        const aria = el.getAttribute('aria-label') || el.getAttribute('title');
-        if (aria) title = aria;
+            // --- Smart Title Extraction ---
+            let title = document.title;
+            const aria = el.getAttribute('aria-label') || el.getAttribute('title');
+            if (aria) title = aria;
 
-        return {
-            pipId: el.dataset.pipId || (el.dataset.pipId = Math.random().toString(36).substr(2, 9)),
-            type: el.tagName.toLowerCase(),
-            src: el.currentSrc || el.src,
-            paused: el.paused,
-            currentTime: el.currentTime,
-            duration: el.duration,
-            volume: el.volume,
-            muted: el.muted,
-            thumbnail: thumbnail,
-            pageTitle: title,
-            isIframe: window !== window.top
-        };
+            return {
+                pipId: el.dataset.pipId || (el.dataset.pipId = Math.random().toString(36).substr(2, 9)),
+                type: el.tagName.toLowerCase(),
+                src: el.currentSrc || el.src,
+                paused: el.paused,
+                currentTime: el.currentTime,
+                duration: el.duration,
+                volume: el.volume,
+                muted: el.muted,
+                thumbnail: thumbnail,
+                pageTitle: title,
+                isPortrait: isPortrait,
+                isIframe: window !== window.top
+            };
+        } catch (e) {
+            return null;
+        }
     };
 
+    // Deep TreeWalker Scan (Finds Shadow DOM elements)
     const findAllMedia = (root = document) => {
         let media = Array.from(root.querySelectorAll('video, audio'));
-        // Basic Shadow DOM Scan
-        const allNodes = root.querySelectorAll('*');
-        for (const node of allNodes) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+        let node;
+        while(node = walker.nextNode()) {
             if (node.shadowRoot) {
                 media = media.concat(findAllMedia(node.shadowRoot));
             }
@@ -131,10 +162,11 @@ function scanForMediaInFrame() {
         return media;
     };
 
-    return findAllMedia().map(getMediaInfo).filter(x => x !== null);
+    // Execute
+    return findAllMedia(document).map(getMediaInfo).filter(x => x !== null);
 }
 
-// Execute the scan
+// --- Execute Scan ---
 chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
     if (!tabs[0]?.id) return;
     const tabId = tabs[0].id;
@@ -160,7 +192,7 @@ chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
     } catch (e) {
         console.error("Scan failed", e);
         document.getElementById('media-list').innerHTML = 
-            '<div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">Restricted page or loading...</div>';
+            '<div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">Scanning failed. Try refreshing page.</div>';
     }
 });
 
@@ -179,15 +211,17 @@ function renderMediaList(mediaItems, container, tabId) {
         const div = document.createElement('div');
         div.className = 'media-item';
         
-        // Thumb or Icon
+        // --- Thumbnail Logic ---
         let visual = '';
+        const thumbClass = media.isPortrait ? 'media-thumb portrait' : 'media-thumb';
+        
         if (media.thumbnail) {
-            visual = `<div class="media-thumb" style="background-image: url('${media.thumbnail}')"></div>`;
+            visual = `<div class="${thumbClass}" style="background-image: url('${media.thumbnail}')"></div>`;
         } else {
             const iconSvg = media.type === 'video' 
                 ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><polygon points="10 8 16 11 10 14 10 8" fill="currentColor" stroke="none"/></svg>'
                 : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
-            visual = `<div class="media-icon-placeholder">${iconSvg}</div>`;
+            visual = `<div class="${thumbClass}" style="background: var(--input-bg); display:flex; justify-content:center; align-items:center;">${iconSvg}</div>`;
         }
 
         const playIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
