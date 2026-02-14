@@ -34,13 +34,25 @@
             <div class="card">
                 <div class="setting-item mb-2">
                     <div class="meta">
+                        <span class="label">Scale Mode</span>
+                        <span class="desc">How image fits the window</span>
+                    </div>
+                    <select id="pipScaleMode" class="dropdown">
+                        <option value="contain">Fit (Default)</option>
+                        <option value="cover">Fill (No Bars)</option>
+                        <option value="fill">Stretch</option>
+                    </select>
+                </div>
+
+                <div class="setting-item mb-2">
+                    <div class="meta">
                         <span class="label">Initial Size</span>
-                        <span class="desc">How the window opens</span>
+                        <span class="desc">Opening dimensions</span>
                     </div>
                     <select id="pipInitialSize" class="dropdown">
-                        <option value="half">Half Size (Default)</option>
-                        <option value="actual">Actual Size (1:1)</option>
-                        <option value="fit">Force Fit Screen</option>
+                        <option value="visual">Visual (Webpage)</option>
+                        <option value="actual">Resolution (100%)</option>
+                        <option value="fit">Max Screen</option>
                     </select>
                 </div>
 
@@ -120,7 +132,7 @@
         </main>
 
         <footer>
-            <div class="status">v2.4.0 • Stable</div>
+            <div class="status">v2.5.1 • Stable</div>
             <a href="https://github.com/krittaphato3" target="_blank" class="author">krittaphato3</a>
         </footer>
     </div>

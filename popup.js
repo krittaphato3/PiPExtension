@@ -1,11 +1,12 @@
 /**
  * @file popup.js
- * @desc Advanced Media Scanner with Tainted Canvas Protection & Shorts Support
+ * @desc Advanced Media Scanner with Tainted Canvas Protection & Scale Mode
  */
 
 const KEYS = { 
     THEME: 'themePref',
     AUTO_PIP: 'autoPipEnabled',
+    SCALE_MODE: 'pipScaleMode',
     INITIAL_SIZE: 'pipInitialSize',
     BG_COLOR: 'pipBackgroundColor',
     LOCK_PAN: 'pipLockPan',
@@ -16,7 +17,8 @@ const KEYS = {
 
 const DEFAULTS = {
     [KEYS.AUTO_PIP]: false,
-    [KEYS.INITIAL_SIZE]: 'half',
+    [KEYS.SCALE_MODE]: 'contain',
+    [KEYS.INITIAL_SIZE]: 'visual', // CHANGED DEFAULT
     [KEYS.BG_COLOR]: 'auto',
     [KEYS.LOCK_PAN]: false,
     [KEYS.EDGE_LOCK]: false,
@@ -31,6 +33,7 @@ const els = {
     speedLabel: document.getElementById('speedVal'),
     inputs: {
         [KEYS.AUTO_PIP]: document.getElementById('autoPipEnabled'),
+        [KEYS.SCALE_MODE]: document.getElementById('pipScaleMode'),
         [KEYS.INITIAL_SIZE]: document.getElementById('pipInitialSize'),
         [KEYS.BG_COLOR]: document.getElementById('pipBackgroundColor'),
         [KEYS.LOCK_PAN]: document.getElementById('pipLockPan'),
@@ -80,52 +83,38 @@ els.themeBtn.addEventListener('click', () => {
 });
 
 // --- SAFE MEDIA SCANNER ---
-// Runs inside the web page to find videos
 function scanForMediaInFrame() {
     const getMediaInfo = (el) => {
         try {
             const rect = el.getBoundingClientRect();
-            // Loose Filter: Accepts small videos too (often used in custom players)
-            if (rect.width < 1 || rect.height < 1) return null;
+            if (rect.width < 5 || rect.height < 5) return null;
             if (getComputedStyle(el).display === 'none') return null;
+            if (el.tagName === 'VIDEO' && !el.currentSrc && !el.src) return null;
             
             let thumbnail = null;
             let isPortrait = false;
 
-            // --- Smart Thumbnail Generation ---
             if (el.tagName === 'VIDEO' && el.readyState >= 2) {
                 const w = el.videoWidth || rect.width;
                 const h = el.videoHeight || rect.height;
-                isPortrait = h > w; // Detect Shorts/Reels
+                isPortrait = h > w; 
 
                 try {
                     const canvas = document.createElement('canvas');
-                    // Create optimized thumbnail size
-                    if (isPortrait) {
-                        canvas.width = 54; 
-                        canvas.height = 96;
-                    } else {
-                        canvas.width = 96;
-                        canvas.height = 54;
-                    }
+                    if (isPortrait) { canvas.width = 54; canvas.height = 96; } 
+                    else { canvas.width = 96; canvas.height = 54; }
                     
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
-                    
-                    // PROTECTED CALL: This line will crash on abyss.to if not wrapped
                     thumbnail = canvas.toDataURL('image/jpeg', 0.5);
                 } catch(err) {
-                    // Security Error (Tainted Canvas). 
-                    // Fallback to the 'poster' image if available.
                     if (el.poster) thumbnail = el.poster;
                     else thumbnail = null; 
                 }
             } else if (el.tagName === 'VIDEO' && el.poster) {
-                // Video not loaded yet, but has poster
                 thumbnail = el.poster;
             }
 
-            // --- Smart Title Extraction ---
             let title = document.title;
             const aria = el.getAttribute('aria-label') || el.getAttribute('title');
             if (aria) title = aria;
@@ -149,7 +138,6 @@ function scanForMediaInFrame() {
         }
     };
 
-    // Deep TreeWalker Scan (Finds Shadow DOM elements)
     const findAllMedia = (root = document) => {
         let media = Array.from(root.querySelectorAll('video, audio'));
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
@@ -162,11 +150,9 @@ function scanForMediaInFrame() {
         return media;
     };
 
-    // Execute
     return findAllMedia(document).map(getMediaInfo).filter(x => x !== null);
 }
 
-// --- Execute Scan ---
 chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
     if (!tabs[0]?.id) return;
     const tabId = tabs[0].id;
@@ -190,28 +176,23 @@ chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
         renderMediaList(allMedia, document.getElementById('media-list'), tabId);
 
     } catch (e) {
-        console.error("Scan failed", e);
         document.getElementById('media-list').innerHTML = 
-            '<div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">Scanning failed. Try refreshing page.</div>';
+            '<div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">Restricted page or loading...</div>';
     }
 });
 
 function renderMediaList(mediaItems, container, tabId) {
     container.innerHTML = '';
-
     if (mediaItems.length === 0) {
         container.innerHTML = '<div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">No playable media found.</div>';
         return;
     }
-    
-    // Sort: Playing first
     mediaItems.sort((a, b) => (a.paused === b.paused) ? 0 : a.paused ? 1 : -1);
 
     mediaItems.forEach(media => {
         const div = document.createElement('div');
         div.className = 'media-item';
         
-        // --- Thumbnail Logic ---
         let visual = '';
         const thumbClass = media.isPortrait ? 'media-thumb portrait' : 'media-thumb';
         
@@ -249,7 +230,6 @@ function renderMediaList(mediaItems, container, tabId) {
         const playBtn = div.querySelector('.play-btn');
         const pipBtn = div.querySelector('.pip-btn');
         
-        // Highlight logic
         div.addEventListener('mouseenter', () => {
             chrome.tabs.sendMessage(tabId, { action: "highlightMedia", id: media.pipId, active: true }, { frameId: media.frameId });
         });
@@ -266,7 +246,6 @@ function renderMediaList(mediaItems, container, tabId) {
         if (pipBtn) {
             pipBtn.onclick = () => chrome.tabs.sendMessage(tabId, { action: "controlMedia", id: media.pipId, command: "pip" }, { frameId: media.frameId });
         }
-
         container.appendChild(div);
     });
 }

@@ -1,7 +1,7 @@
 /**
  * @file content.js
  * @author krittaphato3
- * @desc High-performance DOM agent with Memory Optimization.
+ * @desc High-performance DOM agent. Fixed Zoom Constraints (Min Scale 1.0).
  */
 
 // --- State Management ---
@@ -24,50 +24,27 @@ const Debounce = (func, delay) => {
   };
 };
 
-const getMediaId = (el) => {
-  if (!el.dataset.pipId) {
-    el.dataset.pipId = Math.random().toString(36).substr(2, 9);
-    mediaMap.set(el.dataset.pipId, el);
-  }
-  return el.dataset.pipId;
-};
-
-// --- MEMORY OPTIMIZATION ---
-// Clean up references to detached DOM nodes
 function pruneMediaMap() {
     for (const [id, el] of mediaMap.entries()) {
-        if (!el.isConnected) {
-            mediaMap.delete(id);
-        }
+        if (!el.isConnected) mediaMap.delete(id);
     }
 }
 
-// Deep Scan for Shadow DOM
 const getAllMediaDeep = (root = document) => {
     let media = Array.from(root.querySelectorAll('video, audio'));
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
     let node;
     while(node = walker.nextNode()) {
-        if (node.shadowRoot) {
-            media = media.concat(getAllMediaDeep(node.shadowRoot));
-        }
+        if (node.shadowRoot) media = media.concat(getAllMediaDeep(node.shadowRoot));
     }
     return media;
 };
 
-// Efficient Finder
 const findMediaById = (id) => {
-    // 1. Clean old keys
     pruneMediaMap();
-    
-    // 2. Check Cache
     if (mediaMap.has(id)) return mediaMap.get(id);
-    
-    // 3. Deep Scan (Heavy operation, only if missing)
     const all = getAllMediaDeep(document);
     const found = all.find(el => el.dataset.pipId === id);
-    
-    // 4. Update Cache
     if (found) mediaMap.set(id, found);
     return found;
 };
@@ -79,14 +56,11 @@ const findMainVideo = () => {
            getComputedStyle(v).display !== 'none' && 
            getComputedStyle(v).visibility !== 'hidden';
   });
-
   if (!visible.length) return null;
-
   visible.sort((a, b) => {
     const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
     return (rb.width * rb.height) - (ra.width * ra.height);
   });
-
   const playing = visible.find(v => !v.paused && v.readyState > 2);
   return playing || visible[0];
 };
@@ -96,6 +70,22 @@ document.addEventListener("mousedown", (e) => {
   if (State.isPickerActive) return; 
   if (e.button === 2) State.lastRightClickTarget = e.target;
 }, true);
+
+// REAL-TIME SETTINGS LISTENER
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'sync' && State.pipWindow) {
+        const doc = State.pipWindow.document;
+        const img = doc.querySelector('img, video');
+        const body = doc.body;
+
+        if (changes.pipScaleMode && img) {
+            img.style.objectFit = changes.pipScaleMode.newValue;
+        }
+        if (changes.pipBackgroundColor) {
+            updateBackgroundStyle(body, changes.pipBackgroundColor.newValue);
+        }
+    }
+});
 
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
   switch (req.action) {
@@ -110,20 +100,15 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
     case "togglePickerMode":
       togglePickerMode();
       break;
-    
     case "controlMedia":
       const el = findMediaById(req.id);
-
       if (el) {
         if (req.command === 'pip') {
             if (document.pictureInPictureElement === el) document.exitPictureInPicture();
             else el.requestPictureInPicture().catch(console.error);
-        } else if (req.command === 'togglePlay') {
-          el.paused ? el.play() : el.pause();
-        }
+        } else if (req.command === 'togglePlay') el.paused ? el.play() : el.pause();
       }
       break;
-
     case "highlightMedia":
         const hEl = findMediaById(req.id);
         if (hEl) {
@@ -145,13 +130,11 @@ chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
 // --- Picker Mode ---
 function togglePickerMode() {
   State.isPickerActive = !State.isPickerActive;
-  
   if (State.isPickerActive) {
     document.body.style.cursor = 'crosshair';
     document.addEventListener('mouseover', handlePickerHover, true);
     document.addEventListener('click', handlePickerClick, true);
     document.addEventListener('keydown', handlePickerKey, true);
-    
     const style = document.createElement('style');
     style.id = 'fullpip-picker-style';
     style.textContent = `.fullpip-highlight { outline: 2px solid #2196F3 !important; box-shadow: 0 0 10px rgba(33, 150, 243, 0.5) !important; cursor: crosshair !important; }`;
@@ -161,10 +144,8 @@ function togglePickerMode() {
     document.removeEventListener('mouseover', handlePickerHover, true);
     document.removeEventListener('click', handlePickerClick, true);
     document.removeEventListener('keydown', handlePickerKey, true);
-    
     const style = document.getElementById('fullpip-picker-style');
     if (style) style.remove();
-    
     const highlighted = document.querySelector('.fullpip-highlight');
     if (highlighted) highlighted.classList.remove('fullpip-highlight');
   }
@@ -180,9 +161,8 @@ function handlePickerHover(e) {
 function handlePickerClick(e) {
   e.preventDefault();
   e.stopPropagation();
-  const target = e.target;
   togglePickerMode();
-  launchElementPiP(target);
+  launchElementPiP(e.target);
 }
 
 function handlePickerKey(e) {
@@ -192,14 +172,10 @@ function handlePickerKey(e) {
   }
 }
 
-// --- Element PiP (Live Image) ---
+// --- Element PiP ---
 async function launchElementPiP(sourceNode) {
   if (!window.documentPictureInPicture) return;
-  
-  if (State.pipWindow) {
-    State.pipWindow.close();
-    State.pipWindow = null;
-  }
+  if (State.pipWindow) { State.pipWindow.close(); State.pipWindow = null; }
 
   try {
     const rect = sourceNode.getBoundingClientRect();
@@ -209,7 +185,6 @@ async function launchElementPiP(sourceNode) {
     });
 
     const doc = State.pipWindow.document;
-    
     Array.from(document.styleSheets).forEach(styleSheet => {
       try {
         if (styleSheet.href) {
@@ -233,24 +208,16 @@ async function launchElementPiP(sourceNode) {
     clone.style.position = 'static'; 
     clone.style.margin = '0';
     doc.body.append(clone);
-    
     State.pipWindow.addEventListener("pagehide", cleanupPipState);
 
-  } catch (e) {
-    console.error("[FullPiP] Element Picker Failed:", e);
-  }
+  } catch (e) { console.error("[FullPiP] Element Picker Failed:", e); }
 }
 
 // --- Video PiP ---
 async function launchVideoPiP(target) {
   let video;
-  
-  if (target instanceof HTMLVideoElement) {
-    video = target;
-  } else if (typeof target === 'string') {
-    video = document.querySelector(`video[src="${target}"]`);
-  }
-
+  if (target instanceof HTMLVideoElement) video = target;
+  else if (typeof target === 'string') video = document.querySelector(`video[src="${target}"]`);
   if (!video) video = findMainVideo();
 
   if (!video) return console.warn("[FullPiP] No video found.");
@@ -259,62 +226,71 @@ async function launchVideoPiP(target) {
   try {
     if (document.pictureInPictureElement) await document.exitPictureInPicture();
     await video.requestPictureInPicture();
-  } catch (e) {
-    console.error("[FullPiP] Video Error:", e);
-  }
+  } catch (e) { console.error("[FullPiP] Video Error:", e); }
 }
 
-// --- Image PiP (Main Feature) ---
+// --- Image PiP ---
 async function launchImagePiP() {
   const target = State.lastRightClickTarget;
   if (!target || !window.documentPictureInPicture) return;
 
   const settings = await chrome.storage.sync.get({
-    pipInitialSize: 'half',
+    pipInitialSize: 'visual',
     pipBackgroundColor: 'auto',
     pipLockPan: false,
     pipEdgeLock: false,
     pipZoomSmartLimit: true,
-    pipZoomSpeed: 1.0
+    pipZoomSpeed: 1.0,
+    pipScaleMode: 'contain'
   });
 
-  if (State.pipWindow) {
-    State.pipWindow.close();
-    State.pipWindow = null;
-  }
+  if (State.pipWindow) { State.pipWindow.close(); State.pipWindow = null; }
 
-  const nW = target.naturalWidth || target.width || 800;
-  const nH = target.naturalHeight || target.height || 600;
+  // --- SIZE CALCULATION ---
+  const rect = target.getBoundingClientRect(); 
+  let nW = target.naturalWidth || target.width || 800;
+  let nH = target.naturalHeight || target.height || 600;
   const sW = window.screen.availWidth;
   const sH = window.screen.availHeight;
 
-  let finalW, finalH;
+  let finalW = 500, finalH = 500;
 
-  if (settings.pipInitialSize === 'actual') {
+  if (settings.pipInitialSize === 'visual') {
+      finalW = rect.width;
+      finalH = rect.height;
+  } else if (settings.pipInitialSize === 'actual') {
       finalW = Math.min(nW, sW * 0.9);
       finalH = Math.min(nH, sH * 0.9);
-  } else if (settings.pipInitialSize === 'fit') {
       const ratio = nW / nH;
-      if (ratio > 1) { // Landscape
-          finalW = sW * 0.8;
-          finalH = finalW / ratio;
-      } else { // Portrait
-          finalH = sH * 0.8;
-          finalW = finalH * ratio;
+      if (finalW / finalH > ratio) finalW = finalH * ratio;
+      else finalH = finalW / ratio;
+  } else if (settings.pipInitialSize === 'fit') {
+      const screenRatio = sW / sH;
+      const imageRatio = nW / nH;
+      if (imageRatio > screenRatio) {
+          finalW = sW * 0.85; 
+          finalH = finalW / imageRatio;
+      } else {
+          finalH = sH * 0.85; 
+          finalW = finalH * imageRatio;
       }
   } else {
-      finalW = Math.max(300, nW / 2);
-      finalH = Math.max(200, nH / 2);
+      finalW = rect.width > 0 ? rect.width : 500;
+      finalH = rect.height > 0 ? rect.height : 500;
   }
+
+  // Ensure reasonable minimums
+  finalW = Math.max(150, Math.round(finalW));
+  finalH = Math.max(150, Math.round(finalH));
 
   try {
     State.pipWindow = await window.documentPictureInPicture.requestWindow({
-      width: Math.round(finalW),
-      height: Math.round(finalH)
+      width: finalW,
+      height: finalH
     });
 
     const doc = State.pipWindow.document;
-    setupPipStyles(doc, target, settings.pipBackgroundColor);
+    setupPipStyles(doc, target, settings.pipBackgroundColor, settings.pipScaleMode);
 
     let contentEl;
     if (target.tagName === 'CANVAS') {
@@ -332,22 +308,16 @@ async function launchImagePiP() {
     doc.body.append(contentEl);
     
     setupZoomAndPan(contentEl, settings, State.pipWindow);
-
     State.pipWindow.addEventListener("pagehide", cleanupPipState);
 
-  } catch (e) {
-    console.error("[FullPiP] Image Engine Failed:", e);
-  }
+  } catch (e) { console.error("[FullPiP] Image Engine Failed:", e); }
 }
 
 function setupLiveSync(sourceNode, pipImgNode) {
   if (State.observer) State.observer.disconnect();
-
   const syncLogic = Debounce(() => {
     const newSrc = sourceNode.currentSrc || sourceNode.src || extractBgImage(sourceNode);
-    if (pipImgNode.src !== newSrc) {
-      pipImgNode.src = newSrc;
-    }
+    if (pipImgNode.src !== newSrc) pipImgNode.src = newSrc;
   }, 50);
 
   State.observer = new MutationObserver((mutations) => {
@@ -356,7 +326,6 @@ function setupLiveSync(sourceNode, pipImgNode) {
     );
     if (relevant) syncLogic();
   });
-
   State.observer.observe(sourceNode, { attributes: true });
 }
 
@@ -366,48 +335,47 @@ function cleanupPipState() {
   State.observer = null;
 }
 
-function setupPipStyles(doc, sourceNode, bgSetting) {
-  let bgColor = '#000';
-  let bgImage = 'none';
-  let bgSize = 'auto';
+function updateBackgroundStyle(bodyElement, bgSetting) {
+    let bgColor = '#000';
+    let bgImage = 'none';
+    let bgSize = 'auto';
 
-  if (bgSetting === 'white') bgColor = '#ffffff';
-  else if (bgSetting === 'black') bgColor = '#000000';
-  else if (bgSetting === 'grid') {
-      bgColor = '#e5e5e5';
-      bgImage = `linear-gradient(45deg, #ccc 25%, transparent 25%), 
-                 linear-gradient(-45deg, #ccc 25%, transparent 25%), 
-                 linear-gradient(45deg, transparent 75%, #ccc 75%), 
-                 linear-gradient(-45deg, transparent 75%, #ccc 75%)`;
-      bgSize = '20px 20px';
-  } else {
-    try {
-        if (sourceNode && sourceNode.parentElement) {
-           bgColor = window.getComputedStyle(sourceNode.parentElement).backgroundColor;
-           if (bgColor === 'rgba(0, 0, 0, 0)' || bgColor === 'transparent') bgColor = '#000';
-        }
-    } catch (e) {}
-  }
+    if (bgSetting === 'white') bgColor = '#ffffff';
+    else if (bgSetting === 'black') bgColor = '#000000';
+    else if (bgSetting === 'grid') {
+        bgColor = '#e5e5e5';
+        bgImage = `linear-gradient(45deg, #ccc 25%, transparent 25%), 
+                   linear-gradient(-45deg, #ccc 25%, transparent 25%), 
+                   linear-gradient(45deg, transparent 75%, #ccc 75%), 
+                   linear-gradient(-45deg, transparent 75%, #ccc 75%)`;
+        bgSize = '20px 20px';
+    }
+    
+    bodyElement.style.backgroundColor = bgColor;
+    bodyElement.style.backgroundImage = bgImage;
+    bodyElement.style.backgroundSize = bgSize;
+}
 
+function setupPipStyles(doc, sourceNode, bgSetting, scaleMode) {
   const style = doc.createElement('style');
   style.textContent = `
     body { 
       margin: 0; 
-      background-color: ${bgColor}; 
-      background-image: ${bgImage};
-      background-size: ${bgSize};
-      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
       height: 100vh; width: 100vw;
       display: flex; justify-content: center; align-items: center; 
       overflow: hidden; 
+      cursor: default;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
     }
     img, video { 
       display: block;
-      width: 100%; height: 100%; object-fit: contain; 
+      width: 100%; height: 100%; 
+      object-fit: ${scaleMode}; 
       user-select: none; will-change: transform;
     }
   `;
   doc.head.append(style);
+  updateBackgroundStyle(doc.body, bgSetting);
 }
 
 function setupZoomAndPan(img, settings, pipWin) {
@@ -434,6 +402,33 @@ function setupZoomAndPan(img, settings, pipWin) {
     });
   };
 
+  const doc = pipWin.document;
+  doc.addEventListener('keydown', (e) => {
+      const step = 20 / scale;
+      switch(e.key) {
+          case 'Escape': pipWin.close(); break;
+          case 'ArrowUp': pY += step; updateTransform(); break;
+          case 'ArrowDown': pY -= step; updateTransform(); break;
+          case 'ArrowLeft': pX += step; updateTransform(); break;
+          case 'ArrowRight': pX -= step; updateTransform(); break;
+          case '+': case '=': 
+              scale = Math.min(10, scale * 1.1); updateTransform(); break;
+          case '-': 
+              scale = Math.max(1.0, scale * 0.9); updateTransform(); break; // FIXED: Floor at 1.0 via Key
+          case '0': 
+              scale = 1; pX=0; pY=0; updateTransform(); break;
+      }
+  });
+
+  let cursorTimer;
+  doc.addEventListener('mousemove', () => {
+      doc.body.style.cursor = 'default';
+      clearTimeout(cursorTimer);
+      cursorTimer = setTimeout(() => {
+          if (!isDragging) doc.body.style.cursor = 'none';
+      }, 2000);
+  });
+
   img.addEventListener('wheel', (e) => {
     e.preventDefault();
     const speed = parseFloat(settings.pipZoomSpeed) || 1.0;
@@ -442,17 +437,28 @@ function setupZoomAndPan(img, settings, pipWin) {
     let newScale = scale * safeFactor;
 
     if (settings.pipZoomSmartLimit) {
-        newScale = Math.max(0.1, newScale);
+        // FIXED: The Constraint you requested.
+        // Prevent zooming out scale < 1 (Smaller than window)
+        newScale = Math.max(1.0, newScale);
     } else {
         newScale = Math.max(0.01, newScale);
     }
     
+    // If we hit the limit, reset position to center so it looks fixed
+    if (newScale === 1.0) {
+        pX = 0;
+        pY = 0;
+    }
+
     scale = newScale;
     updateTransform();
   }, { passive: false });
 
   if (!settings.pipLockPan) {
       img.addEventListener('pointerdown', (e) => {
+        // FIXED: Cannot drag if at minimum zoom (Scale 1)
+        if (scale <= 1.0) return;
+
         isDragging = true;
         img.setPointerCapture(e.pointerId);
         startX = e.clientX;
@@ -467,14 +473,12 @@ function setupZoomAndPan(img, settings, pipWin) {
         e.preventDefault();
         const deltaX = (e.clientX - startX);
         const deltaY = (e.clientY - startY);
-
         let nextPx = basePx + (deltaX / scale);
         let nextPy = basePy + (deltaY / scale);
 
         if (settings.pipEdgeLock) {
             const limitX = (winW / 2) / scale;
             const limitY = (winH / 2) / scale;
-            
             nextPx = Math.max(-limitX, Math.min(limitX, nextPx));
             nextPy = Math.max(-limitY, Math.min(limitY, nextPy));
         }
@@ -500,10 +504,7 @@ function setupZoomAndPan(img, settings, pipWin) {
   }
 
   img.addEventListener('dblclick', () => {
-      scale = 1;
-      pX = 0;
-      pY = 0;
-      updateTransform();
+      scale = 1; pX = 0; pY = 0; updateTransform();
   });
 }
 
@@ -513,27 +514,20 @@ function extractBgImage(node) {
   return match ? match[1] : "";
 }
 
-// --- Auto-PiP Engine ---
 (function initAutoPip() {
   chrome.storage.sync.get(['autoPipEnabled'], ({ autoPipEnabled }) => {
     if (!autoPipEnabled) return;
-
     const attemptPip = async () => {
       const v = document.querySelector('video');
       if (v && v.readyState > 0 && !v.paused) {
-        try {
-          await v.requestPictureInPicture();
-          cleanupAutoListeners();
-        } catch (e) { }
+        try { await v.requestPictureInPicture(); cleanupAutoListeners(); } catch (e) { }
       }
     };
-
     const cleanupAutoListeners = () => {
       ['click', 'keydown', 'scroll'].forEach(evt => 
         document.removeEventListener(evt, attemptPip, { capture: true })
       );
     };
-
     ['click', 'keydown', 'scroll'].forEach(evt => 
       document.addEventListener(evt, attemptPip, { capture: true, passive: true })
     );

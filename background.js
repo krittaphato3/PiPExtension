@@ -16,12 +16,10 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab?.id) return;
-
   const payload = { 
     srcUrl: info.srcUrl,
     type: info.menuItemId === MENUS.VIDEO ? 'video' : 'image'
   };
-
   dispatchToContent(tab.id, "contextMenuTrigger", payload);
 });
 

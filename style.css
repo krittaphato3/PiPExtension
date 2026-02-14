@@ -165,7 +165,6 @@ input:checked + .slider:before { transform: translateX(18px); }
     transition: all 0.2s;
 }
 
-/* Portrait / Shorts Support */
 .media-thumb.portrait {
     width: 34px;
     height: 60px;
