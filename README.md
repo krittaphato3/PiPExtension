@@ -1,7 +1,7 @@
 # FullPiP Extension
 
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)
-![Version](g)
+![Version](https://img.shields.io/badge/Version-2.4.0-green?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)
 
 **FullPiP** is a high-performance Chrome Extension designed to extend standard Picture-in-Picture (PiP) capabilities beyond simple video playback. It introduces **Live Image PiP**, utilizing the Document Picture-in-Picture API and MutationObservers to maintain real-time synchronization between floating windows and dynamic page content (e.g., slideshows, live feeds).
