@@ -2,35 +2,69 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
+        <!-- Toast Container -->
+        <div id="toastContainer" class="toast-container"></div>
+
         <header>
             <div class="brand">
                 <div class="logo">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M12 2v20"/><path d="M2 12h20"/></svg>
                 </div>
-                <h1>FullPiP <span class="badge">MAX</span></h1>
+                <h1>FullPiP <span class="badge">PRO</span></h1>
             </div>
-            <div class="theme-toggle" id="themeBtn" title="Toggle Dark/Light Mode"></div>
+            <div class="header-actions">
+                <button id="refreshBtn" class="header-icon" title="Refresh Media List">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                <button id="closeAllBtn" class="header-icon" title="Close All PiP Windows">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+                </button>
+                <div class="theme-toggle" id="themeBtn" title="Toggle Dark/Light Mode"></div>
+            </div>
         </header>
 
+        <!-- PiP Status Bar -->
+        <div class="pip-status-bar" id="pipStatusBar">
+            <span class="status-indicator"></span>
+            <span class="status-text"><span id="pipCount">0</span> PiP window(s) active</span>
+        </div>
+
         <main>
-            <div class="card">
+            <!-- Quick Actions -->
+            <div class="card quick-actions">
                 <div class="setting-item">
                     <div class="meta">
                         <span class="label">Auto-PiP Mode</span>
-                        <span class="desc">Pop video automatically on scroll</span>
+                        <span class="desc">Pop video automatically on first interaction</span>
                     </div>
                     <label class="switch">
                         <input type="checkbox" id="autoPipEnabled">
                         <span class="slider"></span>
                     </label>
                 </div>
+                <div class="setting-item">
+                    <div class="meta">
+                        <span class="label">Show Notifications</span>
+                        <span class="desc">Display toast notifications for actions</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="showNotifications">
+                        <span class="slider"></span>
+                    </label>
+                </div>
             </div>
 
-            <h2 class="media-header">Window Behavior</h2>
+            <h2 class="media-header">
+                <span>Window Behavior</span>
+                <button class="reset-section-btn" data-section="behavior" title="Reset to defaults">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+            </h2>
             <div class="card">
                 <div class="setting-item mb-2">
                     <div class="meta">
@@ -56,7 +90,7 @@
                     </select>
                 </div>
 
-                <div class="setting-item">
+                <div class="setting-item mb-2">
                     <div class="meta">
                         <span class="label">Background</span>
                         <span class="desc">For transparent images</span>
@@ -68,9 +102,28 @@
                         <option value="grid">Checkerboard</option>
                     </select>
                 </div>
+
+                <div class="setting-item">
+                    <div class="meta">
+                        <span class="label">Max PiP Windows</span>
+                        <span class="desc">Maximum simultaneous PiP windows</span>
+                    </div>
+                    <select id="maxPipWindows" class="dropdown">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                    </select>
+                </div>
             </div>
 
-            <h2 class="media-header">Interaction</h2>
+            <h2 class="media-header">
+                <span>Interaction</span>
+                <button class="reset-section-btn" data-section="interaction" title="Reset to defaults">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+            </h2>
             <div class="card">
                 <div class="setting-item mb-2">
                     <div class="meta">
@@ -97,7 +150,7 @@
                 <div class="setting-item mb-2">
                     <div class="meta">
                         <span class="label">Smart Zoom Limit</span>
-                        <span class="desc">Prevent zooming out too far</span>
+                        <span class="desc">Prevent zooming out below 100%</span>
                     </div>
                     <label class="switch">
                         <input type="checkbox" id="pipZoomSmartLimit">
@@ -112,27 +165,144 @@
                     </div>
                     <input type="range" id="pipZoomSpeed" min="0.1" max="3.0" step="0.1" value="1.0" class="range-input">
                 </div>
+
+                <div class="setting-item stack">
+                    <div class="meta" style="flex-direction: row; justify-content: space-between; width: 100%;">
+                        <span class="label">Toast Duration</span>
+                        <span class="desc" id="toastDurationVal">2.5s</span>
+                    </div>
+                    <input type="range" id="toastDuration" min="1" max="10" step="0.5" value="2.5" class="range-input">
+                </div>
             </div>
 
-            <h2 class="media-header">Active Media</h2>
-            <div id="media-list">
-                <div style="text-align: center; color: var(--text-sub); padding: 10px; font-size: 12px;">Scanning...</div>
+            <h2 class="media-header">
+                <span>Advanced</span>
+                <button class="reset-section-btn" data-section="advanced" title="Reset to defaults">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+            </h2>
+            <div class="card">
+                <div class="setting-item mb-2">
+                    <div class="meta">
+                        <span class="label">Highlight on Hover</span>
+                        <span class="desc">Show outline when hovering media in list</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="highlightOnHover" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item mb-2">
+                    <div class="meta">
+                        <span class="label">Auto-scroll to Media</span>
+                        <span class="desc">Scroll page when highlighting</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="autoScrollToMedia" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item mb-2">
+                    <div class="meta">
+                        <span class="label">Cache Media List</span>
+                        <span class="desc">Speed up popup opening</span>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="cacheMediaList" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-item">
+                    <div class="meta">
+                        <span class="label">Media Cache Duration</span>
+                        <span class="desc">How long to cache media list</span>
+                    </div>
+                    <select id="cacheDuration" class="dropdown">
+                        <option value="5000">5 seconds</option>
+                        <option value="15000">15 seconds</option>
+                        <option value="30000">30 seconds</option>
+                        <option value="60000">1 minute</option>
+                    </select>
+                </div>
             </div>
-            
-             <div class="card secondary">
+
+            <!-- Settings Management -->
+            <h2 class="media-header">Settings Management</h2>
+            <div class="card settings-management">
+                <div class="setting-row">
+                    <span class="setting-label">Export Settings</span>
+                    <button id="exportSettingsBtn" class="btn-secondary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Export JSON
+                    </button>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label">Import Settings</span>
+                    <label class="btn-secondary">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Import JSON
+                        <input type="file" id="importSettingsInput" accept=".json" style="display: none;">
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label">Reset All Settings</span>
+                    <button id="resetAllSettingsBtn" class="btn-danger">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        Reset All
+                    </button>
+                </div>
+            </div>
+
+            <!-- Active Media List -->
+            <h2 class="media-header">
+                <span>Active Media</span>
+                <span class="media-count-badge" id="mediaCountBadge">0</span>
+            </h2>
+            <div id="media-list" class="media-list-container">
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <span>Scanning for media...</span>
+                </div>
+            </div>
+
+            <!-- Keyboard Shortcuts -->
+            <div class="card secondary shortcuts-card">
                 <div class="info-row">
-                    <span>Shortcut</span>
+                    <span>Toggle PiP</span>
                     <kbd>Alt + P</kbd>
                 </div>
-                <div class="info-row" style="margin-top:4px">
+                <div class="info-row">
+                    <span>Picker Mode</span>
+                    <kbd>Alt + K</kbd>
+                </div>
+                <div class="info-row">
+                    <span>Close All PiP</span>
+                    <kbd>Alt + Shift + P</kbd>
+                </div>
+                <div class="info-row">
                     <span>Reset View</span>
                     <kbd>Double Click</kbd>
+                </div>
+                <div class="info-row">
+                    <span>Zoom In/Out</span>
+                    <kbd>+ / -</kbd>
+                </div>
+                <div class="info-row">
+                    <span>Pan (when zoomed)</span>
+                    <kbd>Arrow Keys</kbd>
                 </div>
             </div>
         </main>
 
         <footer>
-            <div class="status">v2.5.1 • Stable</div>
+            <div class="status">
+                <span class="version">v3.0.0</span>
+                <span class="status-dot"></span>
+                <span>Stable</span>
+            </div>
             <a href="https://github.com/krittaphato3" target="_blank" class="author">krittaphato3</a>
         </footer>
     </div>

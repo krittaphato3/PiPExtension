@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
   "name": "FullPiP - Ultimate Picture-in-Picture",
-  "version": "2.4.2",
+  "version": "3.0.0",
   "author": "krittaphato3",
-  "description": "Professional-grade PiP tool. Fixed zoom constraints, smart scaling, and multi-frame support.",
+  "description": "Professional-grade PiP tool with QOL enhancements, multi-PiP support, and full customization.",
   "permissions": [
     "contextMenus",
     "storage",
     "activeTab",
     "scripting",
-    "documentPictureInPicture"
+    "documentPictureInPicture",
+    "notifications"
   ],
   "background": {
     "service_worker": "background.js"
@@ -18,7 +19,7 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_end",
+      "run_at": "document_idle",
       "all_frames": true,
       "match_about_blank": true
     }
@@ -34,6 +35,24 @@
         "mac": "Alt+P"
       },
       "description": "Toggle PiP for the main media on page"
+    },
+    "toggle-picker": {
+      "suggested_key": {
+        "default": "Alt+K",
+        "mac": "Alt+K"
+      },
+      "description": "Toggle picker mode to select any element for PiP"
+    },
+    "close-all-pip": {
+      "suggested_key": {
+        "default": "Alt+Shift+P",
+        "mac": "Alt+Shift+P"
+      },
+      "description": "Close all FullPiP windows"
     }
-  }
+  },
+  "web_accessible_resources": [{
+    "resources": ["*.png", "*.svg"],
+    "matches": ["<all_urls>"]
+  }]
 }
