@@ -216,6 +216,58 @@ async function group(name, tests) {
     }
   ]);
 
+  await group('Blob URL detection', [
+    () => {
+      // Mock blob video element
+      const blobVideo = { currentSrc: 'blob:https://youtube.com/abc123', src: '', querySelectorAll: () => [] };
+      assertEq(PiPFactory._isBlobUrl(blobVideo), true, 'blob currentSrc detected');
+
+      // Non-blob video
+      const normalVideo = { currentSrc: 'https://example.com/video.mp4', src: '', querySelectorAll: () => [] };
+      assertEq(PiPFactory._isBlobUrl(normalVideo), false, 'normal URL not blob');
+
+      // _shouldUsePopup forces native for blob URLs even with forcePopup=true
+      const blobResult = PiPFactory._shouldUsePopup({ videoElement: blobVideo, forcePopup: true });
+      assertEq(blobResult, false, 'blob URL forces native despite forcePopup');
+
+      // _shouldUsePopup allows popup for non-blob with forcePopup
+      const normalResult = PiPFactory._shouldUsePopup({ videoElement: normalVideo, forcePopup: true });
+      assertEq(normalResult, true, 'non-blob with forcePopup → popup');
+
+      // Blob URL in videoUrl param
+      const urlResult = PiPFactory._shouldUsePopup({ videoElement: null, videoUrl: 'blob:https://x.com/vid', forcePopup: true });
+      assertEq(urlResult, false, 'blob videoUrl forces native');
+    }
+  ]);
+
+  await group('Deduplication', [
+    async () => {
+      // Clear any existing sources
+      PiPFactory._activeSources.clear();
+
+      // Mock video (must have querySelectorAll for _isBlobUrl)
+      const vid = { currentSrc: 'https://example.com/test.mp4', src: '', querySelectorAll: () => [], dataset: {} };
+      const sourceId = PiPFactory._getSourceId(vid);
+      assertEq(sourceId, 'https://example.com/test.mp4', 'source ID extracted');
+
+      // Register
+      PiPFactory._registerSource(sourceId);
+      assertEq(PiPFactory._activeSources.has(sourceId), true, 'source registered');
+      assertEq(PiPFactory.getActiveSourceCount(), 1, 'active source count = 1');
+
+      // Duplicate should fail
+      PiPFactory._pipIdCounter = 0;
+      const dupResult = await PiPFactory.create({ videoElement: vid });
+      assertEq(dupResult.success, false, 'duplicate blocked');
+      assert(dupResult.error.includes('already open'), 'duplicate error message');
+
+      // Unregister
+      PiPFactory._unregisterSource(sourceId);
+      assertEq(PiPFactory._activeSources.has(sourceId), false, 'source unregistered');
+      assertEq(PiPFactory.getActiveSourceCount(), 0, 'active source count = 0');
+    }
+  ]);
+
   await group('closeAllPip()', [
     async () => {
       const r = await PiPFactory.closeAllPip();

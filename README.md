@@ -141,6 +141,8 @@ Tests cover: configuration values, `_shouldUsePopup` routing logic, cross-tab st
 - **Cross-tab state sync** — `NativePipStateManager` tracks native PiP across all tabs via `chrome.storage.local`
 - **Context-aware API** — `pipFactory.js` detects content script vs service worker context and routes accordingly
 - **Normal scale mode** — New default: natural size, centered, black bars (no forced fitting)
+- **Blob URL support** — YouTube and MediaSource videos now work correctly via native Document PiP (blob URLs can't load in popups)
+- **Duplicate prevention** — Same video cannot be opened as PiP twice; shows "This video is already open in PiP"
 - **Auto-increment positioning** — Popup windows cascade with offset to avoid overlap
 - **Service worker safety** — All `window`/`document` access guarded for service worker context
 - **Cleaner popup UI** — Simplified settings layout with collapsible sections, clear language
