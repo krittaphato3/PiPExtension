@@ -106,14 +106,18 @@ h1 {
 }
 
 .badge {
-    font-size: 10px; 
-    background: linear-gradient(135deg, var(--accent), var(--accent-hover)); 
+    font-size: 10px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
     color: white;
-    padding: 2px 6px; 
-    border-radius: 4px; 
-    vertical-align: middle; 
+    padding: 2px 6px;
+    border-radius: 4px;
+    vertical-align: middle;
     margin-left: 6px;
     font-weight: 600;
+}
+
+.badge.beta {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
 }
 
 .header-actions {
@@ -277,6 +281,52 @@ h1 {
 .pip-status-bar.active .status-text {
     color: var(--text-head);
     font-weight: 500;
+}
+
+/* PiP Method Badges (Native vs Popup) */
+.pip-method-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.pip-method-badge.native {
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    color: white;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.pip-method-badge.popup {
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: white;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+/* Status bar color coding */
+.pip-status-bar[data-pip-method="native"] {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.pip-status-bar[data-pip-method="popup"] {
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+}
+
+.pip-status-bar[data-pip-method="native"] .status-indicator {
+    background: #3b82f6;
+    box-shadow: 0 0 8px #3b82f6;
+}
+
+.pip-status-bar[data-pip-method="popup"] .status-indicator {
+    background: #f59e0b;
+    box-shadow: 0 0 8px #f59e0b;
 }
 
 @keyframes pulse {
@@ -903,3 +953,184 @@ footer {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* ============================================================================
+   MULTI-MONITOR CARD
+   ============================================================================ */
+.multi-monitor-card {
+    padding: 12px;
+}
+
+.monitor-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    margin-bottom: 8px;
+}
+
+.btn-primary {
+    flex: 1;
+    background: var(--accent);
+    border: none;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s var(--ease);
+}
+
+.btn-primary:hover {
+    background: var(--accent-hover);
+    box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.btn-primary:active {
+    transform: scale(0.98);
+}
+
+.monitor-hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-sub);
+    padding: 8px;
+    background: var(--input-bg);
+    border-radius: 6px;
+    line-height: 1.4;
+}
+
+.monitor-hint svg {
+    flex-shrink: 0;
+    opacity: 0.6;
+}
+
+/* ============================================================================
+   V4.0.0 — SIMPLIFIED UI
+   ============================================================================ */
+
+/* Quick Action Buttons */
+.quick-actions {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--bg-card);
+    border-color: var(--accent);
+}
+
+.action-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--text-head);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s var(--ease);
+    font-family: inherit;
+}
+
+.action-btn:hover {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.action-btn:active {
+    transform: translateY(0);
+}
+
+/* Collapsible Settings Sections */
+.settings-section {
+    margin-bottom: 16px;
+}
+
+.settings-section summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+}
+
+.settings-section summary::-webkit-details-marker {
+    display: none;
+}
+
+.settings-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 0;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-sub);
+    letter-spacing: 0.5px;
+    font-weight: 700;
+    transition: color 0.2s var(--ease);
+}
+
+.settings-toggle:hover {
+    color: var(--accent);
+}
+
+.settings-toggle svg {
+    flex-shrink: 0;
+    transition: transform 0.2s var(--ease);
+}
+
+.settings-section[open] > .settings-toggle svg {
+    transform: rotate(90deg);
+}
+
+.settings-content {
+    padding-top: 4px;
+}
+
+/* Sub-section headings */
+.settings-sub {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--text-sub);
+    letter-spacing: 0.5px;
+    font-weight: 700;
+    margin: 16px 0 8px 0;
+    padding-left: 4px;
+}
+
+.settings-sub:first-child {
+    margin-top: 8px;
+}
+
+/* Simplified settings management rows */
+.settings-management .setting-row {
+    padding: 6px 0;
+}
+
+.settings-management .setting-label {
+    font-size: 11px;
+}
+
+.settings-management .btn-secondary,
+.settings-management .btn-danger {
+    padding: 5px 10px;
+    font-size: 11px;
+}
+
+/* Remove desc text styling for simplified items */
+.setting-item .desc {
+    font-size: 10px;
+}
+

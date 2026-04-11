@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' blob: data: https: http:; media-src 'self' blob: data: https: http:; style-src 'unsafe-inline'; script-src 'unsafe-inline' 'self';">
+  <title>FullPiP Player</title>
+  <style>
+    /* ========================================================================
+       BORDERLESS STYLES - Mimic native PiP appearance
+       ======================================================================== */
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    /* Video fills entire window */
+    #player {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+      display: block;
+    }
+
+    /* Loading spinner */
+    .loader {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 48px;
+      height: 48px;
+      border: 3px solid rgba(255, 255, 255, 0.2);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      z-index: 10;
+    }
+
+    @keyframes spin {
+      to { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
+    /* Error overlay */
+    .error-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      text-align: center;
+      padding: 20px;
+      z-index: 20;
+    }
+
+    .error-overlay svg {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 16px;
+      opacity: 0.6;
+    }
+
+    .error-overlay h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .error-overlay p {
+      font-size: 13px;
+      opacity: 0.7;
+      max-width: 300px;
+    }
+
+    .error-overlay .retry-btn {
+      margin-top: 16px;
+      padding: 8px 24px;
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .error-overlay .retry-btn:hover {
+      background: #2563eb;
+    }
+
+    /* Hide elements by default */
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading indicator -->
+  <div id="loader" class="loader"></div>
+
+  <!-- Video player -->
+  <video id="player" controls autoplay playsinline></video>
+
+  <!-- Error overlay -->
+  <div id="errorOverlay" class="error-overlay hidden">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="12"/>
+      <line x1="12" y1="16" x2="12.01" y2="16"/>
+    </svg>
+    <h2 id="errorTitle">Failed to load video</h2>
+    <p id="errorMessage">The video source could not be loaded. It may be unavailable or restricted.</p>
+    <button id="retryBtn" class="retry-btn">Retry</button>
+  </div>
+
+  <script src="player.js"></script>
+</body>
+</html>

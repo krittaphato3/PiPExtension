@@ -1,6 +1,6 @@
 /**
  * @file popup.js
- * @desc Advanced Media Scanner with Cache, Toast Feedback & Settings Management
+ * @desc FullPiP v4.0.0 — Clean, simplified popup UI
  */
 
 const KEYS = {
@@ -8,7 +8,6 @@ const KEYS = {
     AUTO_PIP: 'autoPipEnabled',
     SHOW_NOTIFICATIONS: 'showNotifications',
     SCALE_MODE: 'pipScaleMode',
-    INITIAL_SIZE: 'pipInitialSize',
     BG_COLOR: 'pipBackgroundColor',
     LOCK_PAN: 'pipLockPan',
     EDGE_LOCK: 'pipEdgeLock',
@@ -19,15 +18,13 @@ const KEYS = {
     HIGHLIGHT_ON_HOVER: 'highlightOnHover',
     AUTO_SCROLL_TO_MEDIA: 'autoScrollToMedia',
     CACHE_MEDIA_LIST: 'cacheMediaList',
-    CACHE_DURATION: 'cacheDuration'
 };
 
 const DEFAULTS = {
     [KEYS.THEME]: 'dark',
     [KEYS.AUTO_PIP]: false,
     [KEYS.SHOW_NOTIFICATIONS]: true,
-    [KEYS.SCALE_MODE]: 'contain',
-    [KEYS.INITIAL_SIZE]: 'visual',
+    [KEYS.SCALE_MODE]: 'normal',
     [KEYS.BG_COLOR]: 'auto',
     [KEYS.LOCK_PAN]: false,
     [KEYS.EDGE_LOCK]: false,
@@ -38,30 +35,6 @@ const DEFAULTS = {
     [KEYS.HIGHLIGHT_ON_HOVER]: true,
     [KEYS.AUTO_SCROLL_TO_MEDIA]: true,
     [KEYS.CACHE_MEDIA_LIST]: true,
-    [KEYS.CACHE_DURATION]: 30000  // Optimized from 15000 to 30000 for faster popup open
-};
-
-// Section-based defaults for reset functionality
-const SECTION_DEFAULTS = {
-    behavior: {
-        [KEYS.SCALE_MODE]: 'contain',
-        [KEYS.INITIAL_SIZE]: 'visual',
-        [KEYS.BG_COLOR]: 'auto',
-        [KEYS.MAX_PIP_WINDOWS]: 3
-    },
-    interaction: {
-        [KEYS.LOCK_PAN]: false,
-        [KEYS.EDGE_LOCK]: false,
-        [KEYS.ZOOM_SMART_LIMIT]: true,
-        [KEYS.ZOOM_SPEED]: 1.0,
-        [KEYS.TOAST_DURATION]: 2.5
-    },
-    advanced: {
-        [KEYS.HIGHLIGHT_ON_HOVER]: true,
-        [KEYS.AUTO_SCROLL_TO_MEDIA]: true,
-        [KEYS.CACHE_MEDIA_LIST]: true,
-        [KEYS.CACHE_DURATION]: 15000
-    }
 };
 
 // Media Cache
@@ -71,12 +44,12 @@ const mediaCache = {
     tabId: null
 };
 
-// Settings Cache - reduces chrome.storage.sync calls
+// Settings Cache — reduces chrome.storage.sync calls
 const settingsCache = {
     data: null,
     timestamp: 0,
-    CACHE_DURATION: 3000, // 3 seconds
-    
+    CACHE_DURATION: 3000,
+
     async get(keys = null) {
         const now = Date.now();
         if (this.data && (now - this.timestamp) < this.CACHE_DURATION) {
@@ -85,7 +58,7 @@ const settingsCache = {
             }
             return this.data;
         }
-        
+
         return new Promise((resolve) => {
             chrome.storage.sync.get(keys, (items) => {
                 this.data = { ...this.data, ...items };
@@ -98,7 +71,7 @@ const settingsCache = {
             });
         });
     },
-    
+
     invalidate() {
         this.data = null;
         this.timestamp = 0;
@@ -121,7 +94,6 @@ const els = {
         [KEYS.AUTO_PIP]: document.getElementById('autoPipEnabled'),
         [KEYS.SHOW_NOTIFICATIONS]: document.getElementById('showNotifications'),
         [KEYS.SCALE_MODE]: document.getElementById('pipScaleMode'),
-        [KEYS.INITIAL_SIZE]: document.getElementById('pipInitialSize'),
         [KEYS.BG_COLOR]: document.getElementById('pipBackgroundColor'),
         [KEYS.LOCK_PAN]: document.getElementById('pipLockPan'),
         [KEYS.EDGE_LOCK]: document.getElementById('pipEdgeLock'),
@@ -132,16 +104,12 @@ const els = {
         [KEYS.HIGHLIGHT_ON_HOVER]: document.getElementById('highlightOnHover'),
         [KEYS.AUTO_SCROLL_TO_MEDIA]: document.getElementById('autoScrollToMedia'),
         [KEYS.CACHE_MEDIA_LIST]: document.getElementById('cacheMediaList'),
-        [KEYS.CACHE_DURATION]: document.getElementById('cacheDuration')
     }
 };
 
 const ICONS = {
     moon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>',
     sun: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>',
-    refresh: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
-    check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>',
-    error: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
 };
 
 // ============================================================================
@@ -322,37 +290,6 @@ async function loadSettings() {
     });
 }
 
-async function resetSection(section) {
-    const defaults = SECTION_DEFAULTS[section];
-    if (!defaults) return;
-
-    const settingsToReset = Object.entries(defaults);
-    const updates = {};
-
-    settingsToReset.forEach(([key, value]) => {
-        updates[key] = value;
-        const el = els.inputs[key];
-        if (el) {
-            if (el.type === 'checkbox') {
-                el.checked = value;
-            } else {
-                el.value = value;
-            }
-        }
-    });
-
-    // Clear pending sync queue for these keys
-    settingsToReset.forEach(([key]) => {
-        delete pendingSyncUpdates[key];
-    });
-
-    chrome.storage.local.set(updates, () => {
-        chrome.storage.sync.set(updates, () => {
-            showToast(`${section.charAt(0).toUpperCase() + section.slice(1)} settings reset`, 'success', 1500);
-        });
-    });
-}
-
 async function resetAllSettings() {
     if (!confirm('Reset ALL settings to defaults? This cannot be undone.')) return;
 
@@ -369,6 +306,7 @@ async function resetAllSettings() {
                 Object.keys(els.inputs).forEach(key => {
                     const val = items[key] !== undefined ? items[key] : DEFAULTS[key];
                     const el = els.inputs[key];
+                    if (!el) return;
                     if (el.type === 'checkbox') el.checked = val;
                     else el.value = val;
                     if (key === KEYS.ZOOM_SPEED && els.speedLabel) els.speedLabel.innerText = val + 'x';
@@ -386,7 +324,7 @@ async function resetAllSettings() {
 async function exportSettings() {
     const items = await loadSettings();
     const exportData = {
-        version: '3.0.0',
+        version: '4.0.0',
         exportedAt: new Date().toISOString(),
         settings: items
     };
@@ -550,7 +488,7 @@ async function refreshMediaList(forceRefresh = false) {
     const container = document.getElementById('media-list');
     const settings = await loadSettings();
     const useCache = settings[KEYS.CACHE_MEDIA_LIST] !== false;
-    const cacheDuration = parseInt(settings[KEYS.CACHE_DURATION]) || 15000;
+    const cacheDuration = 30000; // 30 second default
 
     // Check cache validity
     if (!forceRefresh && useCache && mediaCache.data && mediaCache.tabId) {
@@ -754,22 +692,56 @@ function formatTime(seconds) {
 }
 
 // ============================================================================
-// PIPIP WINDOW COUNT UPDATE
+// PIPIP WINDOW COUNT & STATE UPDATE
+// Shows native vs popup PiP state with visual indicator.
 // ============================================================================
 async function updatePipCount() {
     try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!tab?.id) return;
-        
-        const response = await chrome.tabs.sendMessage(tab.id, { action: "getPipCount" });
-        const count = response?.count || 0;
-        els.pipCount.textContent = count;
-        
-        // Update status bar appearance
-        if (count > 0) {
-            els.pipStatusBar.classList.add('active');
+        // Get full PiP state from background (includes native + popup)
+        const state = await chrome.runtime.sendMessage({ action: "getPipState" });
+
+        if (state) {
+            const totalCount = (state.isOpen ? 1 : 0) + state.popupCount;
+            els.pipCount.textContent = totalCount;
+
+            // Update status bar with method-specific indicator
+            if (state.isOpen) {
+                els.pipStatusBar.classList.add('active');
+                els.pipStatusBar.dataset.pipMethod = 'native';
+                // Update status text
+                const statusText = els.pipStatusBar.querySelector('.status-text');
+                if (statusText) {
+                    statusText.innerHTML = `<span id="pipCount">${totalCount}</span> PiP window(s) active <span class="pip-method-badge native">Native</span>`;
+                }
+            } else if (state.popupCount > 0) {
+                els.pipStatusBar.classList.add('active');
+                els.pipStatusBar.dataset.pipMethod = 'popup';
+                const statusText = els.pipStatusBar.querySelector('.status-text');
+                if (statusText) {
+                    statusText.innerHTML = `<span id="pipCount">${totalCount}</span> PiP window(s) active <span class="pip-method-badge popup">Popup</span>`;
+                }
+            } else {
+                els.pipStatusBar.classList.remove('active');
+                els.pipStatusBar.removeAttribute('data-pip-method');
+                const statusText = els.pipStatusBar.querySelector('.status-text');
+                if (statusText) {
+                    statusText.innerHTML = `<span id="pipCount">0</span> PiP window(s) active`;
+                }
+            }
         } else {
-            els.pipStatusBar.classList.remove('active');
+            // Fallback to old method if background not ready
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab?.id) return;
+
+            const response = await chrome.tabs.sendMessage(tab.id, { action: "getPipCount" });
+            const count = response?.count || 0;
+            els.pipCount.textContent = count;
+
+            if (count > 0) {
+                els.pipStatusBar.classList.add('active');
+            } else {
+                els.pipStatusBar.classList.remove('active');
+            }
         }
     } catch (e) {
         els.pipCount.textContent = '0';
@@ -855,13 +827,13 @@ async function updatePipCount() {
         }, 2000);
     });
     
-    // Close all PiP button
+    // Close all PiP button — sends to background (which manages ALL PiP state)
     els.closeAllBtn.addEventListener('click', async () => {
         try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tab?.id) {
-                await chrome.tabs.sendMessage(tab.id, { action: "closeAllPip" });
-                await updatePipCount();
+            // Close via background service worker (closes native + all popup PiP)
+            const result = await chrome.runtime.sendMessage({ action: 'closeAllPip' });
+            await updatePipCount();
+            if (result?.success) {
                 const settings = await loadSettings();
                 if (settings[KEYS.SHOW_NOTIFICATIONS]) {
                     showToast('All PiP windows closed', 'success');
@@ -871,15 +843,7 @@ async function updatePipCount() {
             showToast('No PiP windows to close', 'info');
         }
     });
-    
-    // Reset section buttons
-    document.querySelectorAll('.reset-section-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const section = btn.dataset.section;
-            if (section) resetSection(section);
-        });
-    });
-    
+
     // Export settings
     document.getElementById('exportSettingsBtn').addEventListener('click', exportSettings);
     
@@ -938,4 +902,136 @@ async function updatePipCount() {
             console.log('[FullPiP] Cache cleared');
         }
     };
+
+    // ========================================================================
+    // MULTI-MONITOR PiP UI
+    // ========================================================================
+    const monitorSelect = document.getElementById('monitorSelect');
+    const displayCountBadge = document.getElementById('displayCountBadge');
+    const forcePopupCheckbox = document.getElementById('forcePopup');
+    const launchMonitorPipBtn = document.getElementById('launchMonitorPipBtn');
+    const refreshDisplaysBtn = document.getElementById('refreshDisplaysBtn');
+
+    // Guard: multi-monitor elements may not exist in future HTML variations
+    if (!monitorSelect || !displayCountBadge || !forcePopupCheckbox ||
+        !launchMonitorPipBtn || !refreshDisplaysBtn) {
+        console.warn('[FullPiP] Multi-monitor UI elements missing');
+    }
+
+    let availableDisplays = [];
+
+    /**
+     * Load available displays from background script
+     */
+    async function loadDisplays() {
+        try {
+            const response = await chrome.runtime.sendMessage({ action: 'getDisplays' });
+            if (response?.success) {
+                availableDisplays = response.displays;
+            } else {
+                availableDisplays = [];
+            }
+        } catch (e) {
+            console.warn('[FullPiP] Could not load displays:', e.message);
+            availableDisplays = [];
+        }
+
+        // Populate dropdown
+        if (monitorSelect) {
+            monitorSelect.innerHTML = '<option value="">Auto (Primary)</option>';
+            availableDisplays.forEach((display, idx) => {
+                const opt = document.createElement('option');
+                opt.value = idx;
+                opt.textContent = `${display.name || `Monitor ${idx + 1}`} (${display.width}x${display.height})`;
+                monitorSelect.appendChild(opt);
+            });
+        }
+
+        // Update badge
+        if (displayCountBadge) {
+            displayCountBadge.textContent = availableDisplays.length;
+        }
+
+        // Show/hide multi-monitor section based on availability
+        const multiMonitorCard = document.querySelector('.multi-monitor-card');
+        if (multiMonitorCard) {
+          multiMonitorCard.style.display = availableDisplays.length > 0 ? 'block' : 'none';
+        }
+    }
+
+    /**
+     * Launch PiP on selected monitor
+     */
+    async function launchMonitorPip() {
+        const selectedIdx = monitorSelect.value;
+        const targetDisplay = selectedIdx !== '' ? availableDisplays[parseInt(selectedIdx, 10)] : null;
+        const forcePopup = forcePopupCheckbox.checked;
+
+        if (!targetDisplay && !forcePopup) {
+            showToast('No monitor selected. Choose a monitor or enable Force Popup.', 'warning');
+            return;
+        }
+
+        try {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (!tab?.id) {
+                showToast('No active tab', 'error');
+                return;
+            }
+
+            // Scan for media in the active tab
+            const results = await chrome.scripting.executeScript({
+                target: { tabId: tab.id, allFrames: true },
+                func: () => {
+                    const videos = Array.from(document.querySelectorAll('video'));
+                    const visible = videos.find(v => {
+                        const r = v.getBoundingClientRect();
+                        return r.width > 20 && r.height > 20 && getComputedStyle(v).display !== 'none';
+                    });
+                    return visible ? { src: visible.currentSrc || visible.src, id: visible.dataset.pipId } : null;
+                },
+                world: 'MAIN'
+            });
+
+            const mediaInfo = results?.find(r => r.result)?.result;
+            if (!mediaInfo?.src) {
+                showToast('No video found on page', 'error');
+                return;
+            }
+
+            // Send request to content script
+            const message = {
+                action: 'launchVideoPopup',
+                srcUrl: mediaInfo.src,
+                screenId: targetDisplay?.id,
+                left: targetDisplay?.left,
+                top: targetDisplay?.top,
+                forcePopup: forcePopup || !!targetDisplay,
+            };
+
+            const response = await chrome.tabs.sendMessage(tab.id, message);
+            if (response?.success) {
+                showToast('PiP window opened', 'success');
+            } else {
+                showToast('Failed to open PiP window', 'error');
+            }
+        } catch (e) {
+            console.error('[FullPiP] Failed to launch monitor PiP:', e);
+            showToast('Failed to open PiP. Check console for details.', 'error');
+        }
+    }
+
+    // Event listeners (guarded)
+    if (launchMonitorPipBtn) {
+        launchMonitorPipBtn.addEventListener('click', launchMonitorPip);
+    }
+    if (refreshDisplaysBtn) {
+        refreshDisplaysBtn.addEventListener('click', async () => {
+            await loadDisplays();
+            showToast('Display list refreshed', 'success', 1500);
+        });
+    }
+
+    // Load displays on popup open
+    await loadDisplays();
 })();

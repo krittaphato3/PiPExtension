@@ -1,8 +1,13 @@
 /**
  * @file background.js
  * @author krittaphato3
- * @desc Service worker with multi-PiP support, content script coordination, and notification handling.
+ * @desc Service worker with multi-PiP support, hybrid native/popup factory integration,
+ *       content script coordination, and cross-tab native PiP state tracking.
  */
+
+// Import PiPFactory (will be loaded via manifest content_scripts injection)
+// For service worker context, we include it directly
+importScripts('lib/pipFactory.js');
 
 // ============================================================================
 // CONFIGURATION
@@ -11,55 +16,109 @@ const CONFIG = {
     MENUS: {
         VIDEO: "fullpip-video",
         IMAGE: "fullpip-image",
-        PICKER: "fullpip-picker"
+        PICKER: "fullpip-picker",
+        VIDEO_MONITOR_1: "fullpip-video-monitor-1",
+        VIDEO_MONITOR_2: "fullpip-video-monitor-2",
+        VIDEO_MONITOR_3: "fullpip-video-monitor-3",
     },
     CONTENT_SCRIPT_READY: new Set(), // Track tabs with ready content scripts
     RETRY_DELAY_MS: 100,  // Optimized from 500ms for faster response
     MAX_RETRIES: 2        // Optimized from 3 for faster failure
 };
 
+// Cache for display info
+let cachedDisplays = [];
+let displaysCacheTime = 0;
+const DISPLAYS_CACHE_DURATION = 60000; // 1 minute
+
+// ============================================================================
+// CROSS-TAB NATIVE PIP STATE SYNC
+// The primary cleanup is pipWindow.addEventListener('pagehide') in pipFactory.js.
+// We do NOT use windows.onRemoved as backup because it fires for ALL Chrome
+// windows (tabs, devtools, etc.) and would incorrectly clear native PiP state.
+// ============================================================================
+
 // ============================================================================
 // CONTEXT MENUS SETUP
 // ============================================================================
-function setupContextMenus() {
-    // Remove all first to avoid duplicates
-    chrome.contextMenus.removeAll(() => {
-        // Create menus with proper error handling
-        try {
+async function setupContextMenus() {
+    // MV3: Use Promise-based removeAll, then create menus synchronously
+    try {
+        await chrome.contextMenus.removeAll();
+
+        chrome.contextMenus.create({
+            id: CONFIG.MENUS.VIDEO,
+            title: "FullPiP: Pop Video",
+            contexts: ["video"]
+        });
+
+        chrome.contextMenus.create({
+            id: CONFIG.MENUS.IMAGE,
+            title: "FullPiP: Pop Live Image",
+            contexts: ["image"]
+        });
+
+        // Multi-screen submenu for video
+        const displays = await getDisplays();
+        if (displays.length > 1) {
             chrome.contextMenus.create({
-                id: CONFIG.MENUS.VIDEO,
-                title: "FullPiP: Pop Video",
-                contexts: ["video"]
+                id: "fullpip-video-monitors",
+                title: "FullPiP: Pop Video on...",
+                contexts: ["video"],
             });
 
-            chrome.contextMenus.create({
-                id: CONFIG.MENUS.IMAGE,
-                title: "FullPiP: Pop Live Image",
-                contexts: ["image"]
+            displays.forEach((display, idx) => {
+                chrome.contextMenus.create({
+                    id: CONFIG.MENUS[`VIDEO_MONITOR_${idx + 1}`] || `fullpip-video-monitor-${idx + 1}`,
+                    title: `${display.name || `Monitor ${idx + 1}`}`,
+                    contexts: ["video"],
+                    parentId: "fullpip-video-monitors",
+                });
             });
-
-            chrome.contextMenus.create({
-                id: CONFIG.MENUS.PICKER,
-                title: "FullPiP: Picker Mode",
-                contexts: ["page", "selection"]
-            });
-            
-            console.log('[FullPiP] Context menus created successfully');
-        } catch (e) {
-            console.error('[FullPiP] Failed to create context menus:', e);
         }
-    });
+
+        chrome.contextMenus.create({
+            id: CONFIG.MENUS.PICKER,
+            title: "FullPiP: Picker Mode",
+            contexts: ["page", "selection"]
+        });
+
+        console.log('[FullPiP] Context menus created successfully');
+    } catch (e) {
+        console.error('[FullPiP] Failed to create context menus:', e);
+    }
 }
 
 // Setup context menus immediately when service worker starts
 setupContextMenus();
 
 // Context menu click handler
-chrome.contextMenus.onClicked.addListener((info, tab) => {
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (!tab?.id) return;
+
+    // Check if this is a multi-screen menu item
+    const monitorMatch = info.menuItemId.match(/fullpip-video-monitor-(\d+)/);
+    if (monitorMatch) {
+        const monitorIdx = parseInt(monitorMatch[1], 10);
+        const displays = await getDisplays();
+        const targetDisplay = displays[monitorIdx - 1];
+
+        if (targetDisplay) {
+            // Create popup PiP on specific monitor
+            await createVideoPopupOnMonitor(tab.id, info.srcUrl, targetDisplay);
+        } else {
+            // Fallback to default
+            dispatchToContent(tab.id, "contextMenuTrigger", {
+                srcUrl: info.srcUrl,
+                type: 'video'
+            });
+        }
+        return;
+    }
 
     switch (info.menuItemId) {
         case CONFIG.MENUS.VIDEO:
+            // Use hybrid factory via content script
             dispatchToContent(tab.id, "contextMenuTrigger", {
                 srcUrl: info.srcUrl,
                 type: 'video'
@@ -108,13 +167,18 @@ chrome.commands.onCommand.addListener((command) => {
 // ============================================================================
 async function dispatchToContent(tabId, action, data, retryCount = 0) {
     const message = { action, ...data };
-    
+
     try {
         await chrome.tabs.sendMessage(tabId, message);
         return { success: true };
     } catch (err) {
+        // Tab was destroyed — no point retrying
+        if (err.message?.includes('No tab with id')) {
+            return { success: false, error: 'Tab no longer exists' };
+        }
+
         // Content script might not be ready yet, retry
-        if (retryCount < CONFIG.MAX_RETRIES && err.message.includes('Could not establish')) {
+        if (retryCount < CONFIG.MAX_RETRIES && err.message?.includes('Could not establish')) {
             return new Promise(resolve => {
                 setTimeout(async () => {
                     const result = await dispatchToContent(tabId, action, data, retryCount + 1);
@@ -122,7 +186,7 @@ async function dispatchToContent(tabId, action, data, retryCount = 0) {
                 }, CONFIG.RETRY_DELAY_MS);
             });
         }
-        
+
         // Final retry: inject content script and try again
         if (retryCount === CONFIG.MAX_RETRIES) {
             try {
@@ -136,9 +200,9 @@ async function dispatchToContent(tabId, action, data, retryCount = 0) {
                 return { success: true, injected: true };
             } catch (injectErr) {
                 console.debug(`[FullPiP] Failed to inject/send: ${injectErr.message}`);
-                return { 
-                    success: false, 
-                    error: 'Content script unavailable. Try refreshing the page.' 
+                return {
+                    success: false,
+                    error: 'Content script unavailable. Try refreshing the page.'
                 };
             }
         }
@@ -221,55 +285,201 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 // ============================================================================
-// SERVICE WORKER KEEP-ALIVE (Port-based Connection)
+// MULTI-MONITOR SUPPORT
 // ============================================================================
-// Persistent connections from content scripts keep the service worker alive
-// This is the native MV3 approach instead of polling chrome.storage
-const activePorts = new Set();
 
-function startKeepAlive() {
-    // No longer needed - ports keep SW alive naturally
-    stopKeepAlive();
-}
+/**
+ * Get display info (cached). Requires "system.display" permission.
+ *
+ * @returns {Promise<Array<Object>>}
+ */
+async function getDisplays() {
+    const now = Date.now();
+    if (cachedDisplays.length > 0 && (now - displaysCacheTime) < DISPLAYS_CACHE_DURATION) {
+        return cachedDisplays;
+    }
 
-function stopKeepAlive() {
-    // Ports manage their own lifecycle
-}
-
-// Handle persistent connections from content scripts
-chrome.runtime.onConnect.addListener((port) => {
-    if (port.name !== 'fullpip-keepalive') return;
-
-    activePorts.add(port);
-    console.debug(`[FullPiP] Port connected. Active ports: ${activePorts.size}`);
-
-    // Keep port alive and respond to pings
-    port.onMessage.addListener((msg) => {
-        if (msg.action === 'ping') {
-            port.postMessage({ action: 'pong', activePipCount: State?.pipCount || 0 });
+    try {
+        if (!chrome.system?.display) {
+            console.warn('[FullPiP] chrome.system.display not available');
+            return [];
         }
-    });
 
-    // Clean up when port disconnects
-    port.onDisconnect.addListener(() => {
-        activePorts.delete(port);
-        console.debug(`[FullPiP] Port disconnected. Active ports: ${activePorts.size}`);
+        const displays = await chrome.system.display.getInfo();
+        cachedDisplays = displays.map((d) => ({
+            id: d.id,
+            name: d.name || `Monitor ${d.id}`,
+            width: d.bounds.width,
+            height: d.bounds.height,
+            left: d.bounds.left,
+            top: d.bounds.top,
+            isPrimary: d.isPrimary || false,
+            screenId: d.id,
+        }));
+        displaysCacheTime = now;
+        return cachedDisplays;
+    } catch (e) {
+        console.error('[FullPiP] Failed to get display info:', e);
+        return [];
+    }
+}
+
+/**
+ * Create a popup PiP window on a specific monitor.
+ *
+ * @param {number} tabId - Tab that triggered this
+ * @param {string} videoUrl - URL of the video
+ * @param {Object} display - Display info from getDisplays()
+ */
+async function createVideoPopupOnMonitor(tabId, videoUrl, display) {
+    if (!videoUrl) {
+        console.warn('[FullPiP] No video URL provided for popup');
+        return;
+    }
+
+    try {
+        const result = await PiPFactory.createPopup({
+            url: videoUrl,
+            width: 480,
+            height: 270,
+            screenId: display.screenId,
+            sourceTabId: tabId,
+        });
+
+        if (result.success) {
+            console.log(`[FullPiP] Video popup created on ${display.name}: ${videoUrl}`);
+        } else {
+            console.error('[FullPiP] Failed to create video popup:', result.error);
+        }
+    } catch (e) {
+        console.error('[FullPiP] Error creating popup:', e);
+    }
+}
+
+/**
+ * Handle hybrid PiP requests from content scripts.
+ * This allows content scripts to delegate to the background's PiPFactory.
+ */
+async function handleHybridPipRequest(params) {
+    const { videoUrl, width, height, screenId, left, top, sourceTabId } = params;
+
+    if (!videoUrl) {
+        return { success: false, error: 'No video URL provided' };
+    }
+
+    return await PiPFactory.createPopup({
+        url: videoUrl,
+        width: width || 480,
+        height: height || 270,
+        screenId,
+        left,
+        top,
+        sourceTabId,
     });
+}
+
+// ============================================================================
+// EXTENDED MESSAGE HANDLER - Add hybrid PiP support
+// ============================================================================
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    // ── New: Direct popup creation from content script ─────────────────────
+    // PiPFactory in content script context delegates here because
+    // content scripts don't have chrome.windows permission.
+    if (msg.action === 'createPopupPip') {
+        PiPFactory.createPopup({
+            url: msg.url,
+            pipId: msg.pipId,
+            width: msg.width,
+            height: msg.height,
+            screenId: msg.screenId,
+            left: msg.left,
+            top: msg.top,
+            sourceTabId: sender.tab?.id,
+        }).then((result) => {
+            sendResponse(result);
+        }).catch((err) => {
+            sendResponse({
+                success: false,
+                pipId: msg.pipId,
+                method: 'popup',
+                error: err?.message || 'Popup creation failed',
+            });
+        });
+        return true; // Async response
+    }
+
+    // Close a specific popup PiP window (delegated from content script)
+    if (msg.action === 'closePopupPip') {
+        PiPFactory.closePopup(msg.windowId).then((success) => {
+            sendResponse({ success });
+        }).catch((err) => {
+            sendResponse({ success: false, error: err?.message || 'Close failed' });
+        });
+        return true;
+    }
+
+    // Handle hybrid PiP factory requests from content scripts
+    if (msg.action === 'hybridPipRequest') {
+        handleHybridPipRequest({
+            videoUrl: msg.videoUrl,
+            width: msg.width,
+            height: msg.height,
+            screenId: msg.screenId,
+            left: msg.left,
+            top: msg.top,
+            sourceTabId: sender.tab?.id,
+        }).then(sendResponse).catch((err) => {
+            sendResponse({ success: false, error: err?.message || 'Hybrid PiP failed' });
+        });
+        return true; // Async response
+    }
+
+    // Get popup PiP count
+    if (msg.action === 'getPopupPipCount') {
+        sendResponse({ count: PiPFactory.getActivePopupCount() });
+        return true;
+    }
+
+    // Close all popup PiP windows
+    if (msg.action === 'closeAllPopupPip') {
+        PiPFactory.closeAllPopups().then((count) => {
+            sendResponse({ success: true, closed: count });
+        }).catch((err) => {
+            sendResponse({ success: false, error: err?.message || 'Close all failed' });
+        });
+        return true;
+    }
+
+    // Get full PiP state (native + popup)
+    if (msg.action === 'getPipState') {
+        sendResponse(PiPFactory.getPipState());
+        return true;
+    }
+
+    // Close ALL PiP windows (native + popup)
+    if (msg.action === 'closeAllPip') {
+        PiPFactory.closeAllPip().then((result) => {
+            sendResponse({ success: true, ...result });
+        }).catch((err) => {
+            sendResponse({ success: false, error: err?.message || 'Close all failed' });
+        });
+        return true;
+    }
+
+    // Get available displays
+    if (msg.action === 'getDisplays') {
+        getDisplays().then((displays) => {
+            sendResponse({ success: true, displays });
+        }).catch((err) => {
+            sendResponse({ success: false, displays: [], error: err?.message || 'Failed to get displays' });
+        });
+        return true;
+    }
 });
 
-// ============================================================================
-// UTILITY: GET ACTIVE TAB INFO
-// ============================================================================
-function getActiveTabInfo() {
-    return new Promise((resolve) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            resolve(tabs[0] || null);
-        });
-    });
-}
-
 // Export for potential use in devtools
-if (typeof global !== 'undefined') {
-    global.dispatchToContent = dispatchToContent;
-    global.getActiveTabInfo = getActiveTabInfo;
+if (typeof globalThis !== 'undefined') {
+    globalThis.dispatchToContent = dispatchToContent;
+    globalThis.getDisplays = getDisplays;
+    globalThis.PiPFactory = PiPFactory;
 }

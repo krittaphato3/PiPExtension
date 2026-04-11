@@ -1,318 +1,174 @@
-# FullPiP Extension
+# FullPiP — Picture-in-Picture
 
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
-[![Version](https://img.shields.io/badge/Version-3.1.0-green?style=flat-square)](https://github.com/krittaphato3/PiPExtension/releases)
+[![Version](https://img.shields.io/badge/Version-4.0.0--Beta-orange?style=flat-square)](https://github.com/krittaphato3/PiPExtension/releases)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)](LICENSE)
 
-A professional-grade Chrome extension that enhances Picture-in-Picture (PiP) functionality with multi-window support, real-time synchronization, and extensive customization options.
+Smart multi-window PiP for Chrome. Open a video in Picture-in-Picture, then open **another** — it automatically creates additional windows instead of replacing the first one.
 
-## Overview
+## How It Works
 
-FullPiP extends beyond standard browser PiP capabilities by providing:
+1. **First PiP** → Opens using Chrome's native Document PiP API (best quality)
+2. **Second PiP** → Automatically opens as a popup window (no replacement)
+3. **Third, Fourth, Fifth…** → Each gets its own independent window
 
-- **Multi-window PiP** — Run up to 5 simultaneous PiP windows
-- **Live Image PiP** — Real-time synchronized floating windows for images and custom elements
-- **Advanced customization** — Configurable window behavior, interaction controls, and visual themes
-- **Performance optimized** — Port-based keep-alive with zero polling overhead
+Everything is automatic. No configuration needed.
 
-## Table of Contents
+## Quick Start
 
-- [Features](#features)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Architecture](#architecture)
-- [Configuration](#configuration)
-- [Troubleshooting](#troubleshooting)
-- [Changelog](#changelog)
-- [Contributing](#contributing)
-- [License](#license)
+| What You Want | How To Do It |
+|---|---|
+| Open a video in PiP | **Right-click** the video → **FullPiP: Pop Video** |
+| Quick PiP toggle | Press **Alt + P** |
+| Pick any element | **Right-click** page → **FullPiP: Picker Mode** (or **Alt + K**) |
+| Multi-monitor PiP | **Right-click** video → submenu with monitor list |
+| Close all PiP | Press **Alt + Shift + P** |
 
 ## Features
 
-### Enhanced Video PiP
-- Native HTML5 `<video>` integration via context menu
-- Keyboard shortcuts for quick access (`Alt+P`)
-- Intelligent video detection (prioritizes largest/playing video)
-- Auto-PiP mode for automatic activation on supported pages
+### Automatic Multi-Window
+Chrome only allows **one** native PiP window at a time. FullPiP works around this by detecting when a PiP is already open and automatically opening additional windows as borderless popups that look and behave just like native PiP.
 
-### Live Image PiP
-- Document Picture-in-Picture API for persistent floating windows
-- Real-time content synchronization via `MutationObserver`
-- Canvas streaming support for dynamic content
-- CSS background image detection
-- Multi-window support (configurable up to 5 windows)
+### Scale Modes
+Choose how content fills the PiP window:
+- **Normal** — Natural size, centered, black bars where content doesn't fill (default)
+- **Fit** — Scales to fit entirely within window, may letterbox
+- **Fill** — Scales to fill entire window, may crop
+- **Stretch** — Stretches to fill window, may distort
 
-### Picker Mode
-- Crosshair cursor for precise element selection
-- Visual hover highlighting with tooltip feedback
-- Compatible with any DOM element (images, videos, canvas, divs)
-- Keyboard shortcut (`Alt+K`) for quick access
+### Live Video Sync
+Popup PiP windows sync playback with the original video — play, pause, seek, and volume changes are mirrored in both directions.
 
-### Smart Zoom & Pan Controls
+### Multi-Monitor Support
+Send PiP windows to specific monitors. Right-click a video and use the monitor submenu, or use the extension popup to choose a target display.
 
-| Action         | Control              |
-| -------------- | -------------------- |
-| Zoom In        | `+` or `=`           |
-| Zoom Out       | `-`                  |
-| Reset View     | Double-click or `0`  |
-| Pan            | Arrow keys (when zoomed) |
-| Drag           | Click + drag (zoom > 100%) |
-
-### Customization Options
-
-#### Window Behavior
-- **Scale Mode** — Fit / Fill / Stretch
-- **Initial Size** — Visual / Resolution / Max Screen
-- **Background** — Auto / Black / White / Checkerboard
-- **Max Windows** — 1–5 simultaneous PiP windows
-
-#### Interaction Controls
-- **Lock Position** — Disable dragging (zoom only)
-- **Edge Resistance** — Keep content within window bounds
-- **Smart Zoom Limit** — Prevent zoom below 100%
-- **Zoom Speed** — 0.1x – 3.0x sensitivity
-- **Toast Duration** — 1s – 10s notification display
-
-#### Advanced Settings
-- **Highlight on Hover** — Show outline in media list
-- **Auto-scroll to Media** — Scroll page when highlighting
-- **Cache Media List** — Improve popup loading performance
-- **Cache Duration** — 5s – 60s
-
-## Installation
-
-### Quick Install
-
-1. Navigate to `chrome://extensions/` in Chrome
-2. Enable **Developer mode** (toggle in top-right corner)
-3. Click **Load unpacked**
-4. Select the extension directory
-
-### Manual Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/krittaphato3/PiPExtension.git
-cd PiPExtension
-
-# Load in Chrome using the steps above
-```
-
-## Usage
-
-### Context Menu
-
-| Action        | Method                                              |
-| ------------- | --------------------------------------------------- |
-| Pop Video     | Right-click video → **FullPiP: Pop Video**          |
-| Pop Image     | Right-click image → **FullPiP: Pop Live Image**     |
-| Picker Mode   | Right-click page → **FullPiP: Picker Mode**         |
+### Customization
+- **Background** — Auto, Black, White, or Checkerboard
+- **Zoom & Pan** — Scroll to zoom, arrow keys to pan, double-click to reset
+- **Max Windows** — Limit simultaneous PiP windows (1–5)
+- **Edge Resistance** — Prevent image from being dragged outside the window
+- **Smart Zoom** — Prevent zooming out below 100%
 
 ### Keyboard Shortcuts
 
-| Shortcut        | Action                        |
-| --------------- | ----------------------------- |
-| `Alt+P`         | Toggle PiP for main video     |
-| `Alt+K`         | Toggle Picker Mode            |
-| `Alt+Shift+P`   | Close all PiP windows         |
-| `Escape`        | Close PiP window / Exit Picker |
+| Shortcut | Action |
+|---|---|
+| `Alt + P` | Toggle PiP for main video |
+| `Alt + K` | Toggle Picker Mode |
+| `Alt + Shift + P` | Close all PiP windows |
+| `+` / `-` | Zoom in / out (inside PiP) |
+| `Arrow Keys` | Pan (when zoomed) |
+| `Double Click` | Reset view |
+| `0` | Reset zoom and pan to defaults |
+| `F` | Cycle scale mode (inside popup PiP) |
+| `M` | Toggle mute (inside popup PiP) |
+| `Space` | Play / Pause (inside popup PiP) |
+| `Escape` | Close PiP window |
 
-### Popup Interface
+## Installation
 
-1. Click the **FullPiP icon** in the Chrome toolbar
-2. Browse detected media in the **Active Media** section
-3. Click ▶️ to play/pause, 📺 to open in PiP
-4. Hover over items to highlight corresponding elements on the page
+1. Open `chrome://extensions/` in Chrome
+2. Enable **Developer mode** (top-right toggle)
+3. Click **Load unpacked**
+4. Select the extension folder
 
-### Settings Management
+## Project Structure
 
-- **Export** — Download current settings as a JSON file
-- **Import** — Restore settings from a JSON backup
-- **Reset Section** — Reset individual setting categories
-- **Reset All** — Restore factory defaults (preserves theme preference)
+| File | Role |
+|---|---|
+| `manifest.json` | Extension config (MV3) |
+| `background.js` | Service worker — context menus, shortcuts, message routing, cross-tab PiP state |
+| `content.js` | Page-level script — media detection, PiP orchestration, live sync |
+| `lib/pipFactory.js` | Hybrid PiP engine — conditional native/popup routing, state management |
+| `popup.html` / `popup.js` | Extension popup — media list, settings, multi-monitor controls |
+| `player.html` / `player.js` | Borderless video proxy for popup PiP windows |
+| `style.css` | Popup theme (dark/light) |
+| `logo.svg` | Extension icon |
 
-## Architecture
-
-### Component Overview
-
-| File             | Responsibility                              |
-| ---------------- | ------------------------------------------- |
-| `manifest.json`  | MV3 configuration, permissions, and metadata |
-| `background.js`  | Service worker: context menus, shortcuts, messaging, port lifecycle management |
-| `content.js`     | DOM integration: PiP logic, live sync, media detection |
-| `popup.html`     | Settings interface and media scanner        |
-| `popup.js`       | Media detection, caching, dual-storage settings management |
-| `style.css`      | Themed styling with GPU-accelerated animations |
-
-### Key Technologies
-
-| Technology                    | Purpose                              |
-| ----------------------------- | ------------------------------------ |
-| `documentPictureInPicture`    | Floating window API                  |
-| `MutationObserver`            | Real-time DOM change detection       |
-| `chrome.runtime.connect()`    | Persistent service worker keep-alive |
-| `chrome.storage.local`        | Instant settings persistence         |
-| `chrome.storage.sync`         | Cross-device settings sync (debounced) |
-| `chrome.scripting`            | Cross-frame media detection          |
-| `canvas.captureStream()`      | Live canvas streaming                |
-
-### Storage Architecture
+### How the Hybrid PiP Engine Works
 
 ```
-User Interaction
-    │
-    ├──► chrome.storage.local.set()  ← Immediate (0ms) — UI responsiveness
-    │
-    └──► pendingSyncUpdates queue
-           │
-           └──► chrome.storage.sync.set() ← Debounced (2000ms) — Cross-device sync
-                    │
-                    └──► On failure: re-queue for retry
+User requests PiP
+        │
+        ▼
+Check: Is a native Document PiP window already open?
+        │
+   ┌────┴────┐
+   ▼         ▼
+  NO         YES
+   │         │
+   ▼         ▼
+Native    Popup Window
+PiP       (chrome.windows.create)
+request   → No replacement
+Window()  → Supports positioning
 ```
 
-### Permissions
+State is tracked across tabs via `chrome.storage.local`, so the extension knows if **any** tab has a native PiP open — not just the current tab.
 
-| Permission                     | Purpose                              |
-| ------------------------------ | ------------------------------------ |
-| `contextMenus`                 | Right-click menu integration         |
-| `documentPictureInPicture`     | Floating PiP windows                 |
-| `storage`                      | Settings persistence (local + sync)  |
-| `activeTab` / `scripting`      | Media detection across frames        |
-| `notifications`                | Action feedback (optional)           |
+## Testing
 
-## Configuration
+Run the unit tests (Node.js required):
 
-### Default Settings
-
-```json
-{
-  "themePref": "dark",
-  "autoPipEnabled": false,
-  "showNotifications": true,
-  "pipScaleMode": "contain",
-  "pipInitialSize": "visual",
-  "pipBackgroundColor": "auto",
-  "pipLockPan": false,
-  "pipEdgeLock": false,
-  "pipZoomSmartLimit": true,
-  "pipZoomSpeed": 1.0,
-  "maxPipWindows": 3,
-  "toastDuration": 2.5,
-  "highlightOnHover": true,
-  "autoScrollToMedia": true,
-  "cacheMediaList": true,
-  "cacheDuration": 15000
-}
+```bash
+node tests/test-pipFactory.js
 ```
 
-### Export Format
-
-```json
-{
-  "version": "3.1.0",
-  "exportedAt": "2026-04-05T12:00:00.000Z",
-  "settings": {
-    "// ... all settings keys": ""
-  }
-}
-```
+Tests cover: configuration values, `_shouldUsePopup` routing logic, cross-tab state manager lifecycle, proxy detection for all video formats, URL extraction from video elements, `getPipState()`, `create()` edge cases, and `closeAllPip()` context safety.
 
 ## Troubleshooting
 
-### Common Issues
+**No PiP window opens**
+- Some sites block PiP (Netflix, Disney+, etc.)
+- Try right-clicking the video directly instead of using Alt+P
 
-**No media detected on page**
-- Refresh the page and retry
-- Some sites implement PiP restrictions (e.g., Netflix, Disney+)
-- Use Picker Mode (`Alt+K`) for manual element selection
+**Second PiP replaces the first**
+- This was a known issue in v3.x — fixed in v4.0.0
+- Make sure you've reloaded the extension after updating
 
-**Content script unavailable**
-- Refresh the page
-- Verify the extension is enabled in `chrome://extensions/`
-- Note: Restricted pages (`chrome://`, `about:blank`) block extension scripts
-
-**PiP window closes immediately**
-- Browsers enforce PiP window limits (typically 1–2)
-- Verify `Max PiP Windows` setting
-- Close existing PiP windows before opening new ones
+**Popup PiP shows a download instead of video**
+- Raw video files (.mp4, .webm) trigger browser downloads without the player proxy
+- FullPiP automatically routes these through `player.html` — if this fails, try a different video source
 
 **Settings not syncing across devices**
-- Verify Chrome sync status in `chrome://settings/syncSetup`
-- Local save occurs immediately; sync migration triggers after 2 seconds of inactivity
-- Allow a few seconds for sync completion before closing the popup
-
-### Debug Mode
-
-Access extension logs via Chrome DevTools:
-
-```
-chrome://extensions/ → FullPiP → "Inspect views: background page"
-```
-
-Debug utilities available in page console:
-
-```javascript
-window.FullPiPDebug.getState()
-window.FullPiPDebug.getErrorRate()
-```
+- Settings save instantly locally; cross-device sync happens after 2 seconds of inactivity
+- Open the popup to trigger a sync flush
 
 ## Changelog
 
-### v3.1.0 — April 2026 (Performance Update)
-- Replaced `setInterval` keep-alive with native `chrome.runtime.connect()` port-based approach
-- Dual-storage architecture: instant `chrome.storage.local` saves + debounced `chrome.storage.sync` migration (2000ms)
-- Automatic retry for failed sync migrations (zero data loss guarantee)
-- Eliminated 20-second polling overhead; service worker lifecycle tied to active PiP windows
-- Optimized `loadSettings()` to merge local + sync storage simultaneously
-- Added pending sync queue management for reset/import operations
+### v4.0.0 Beta — April 2026
+- **Unified PiP routing** — All PiP opens now go through `PiPFactory.create()`, fixing tracking gaps
+- **Cross-tab state sync** — `NativePipStateManager` tracks native PiP across all tabs via `chrome.storage.local`
+- **Context-aware API** — `pipFactory.js` detects content script vs service worker context and routes accordingly
+- **Normal scale mode** — New default: natural size, centered, black bars (no forced fitting)
+- **Auto-increment positioning** — Popup windows cascade with offset to avoid overlap
+- **Service worker safety** — All `window`/`document` access guarded for service worker context
+- **Cleaner popup UI** — Simplified settings layout with collapsible sections, clear language
+- **Reliable message handling** — All async message handlers have `.catch()` to prevent hanging responses
+- **No more destructive fallback** — Failed popup attempts no longer close existing PiP windows
+- **Memory leak fixes** — Video sync listeners cleaned up on both source and target pagehide
+- **Edge resistance** — Properly prevents dragging content outside the PiP window
+- **Settings cache** — Now reads from both `local` and `sync` storage for instant responsiveness
+- **MV3 compliance** — Promise-based context menu setup, removed dead code, proper error handling
 
-### v3.0.0 — March 2026 (Major Feature Release)
-- Full customization for all features
-- Settings export/import functionality
-- Toast notifications for all actions
-- PiP status indicator with live count
-- Media list caching with configurable duration
-- Close button in every PiP window
-- Picker mode keyboard shortcut (`Alt+K`)
-- Close all PiP shortcut (`Alt+Shift+P`)
-- Fixed memory leaks in content script
-- Fixed zoom constraint (min 1.0)
-- Fixed multi-frame media detection
-- Complete UI redesign with themes
-- Section-based settings reset
+### v3.1.0
+- Port-based service worker keep-alive
+- Dual-storage architecture (local + sync)
+- Media list caching
 
-### v2.4.2
-- Smart zoom limit implementation
-- Edge resistance for panning
-- Live image synchronization
-- Auto-PiP mode
-
-## Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Chrome Document Picture-in-Picture API
-- Manifest V3 Specification
-- Community contributors and testers
+### v3.0.0
+- Full customization system
+- Settings export/import
+- Toast notifications
+- Multi-PiP support
+- Complete UI redesign
 
 ---
 
 <div align="center">
 
-**Enjoy FullPiP?** ⭐ Star this repository and share it!
+**FullPiP v4.0.0 Beta** — Made by [krittaphato3](https://github.com/krittaphato3)
 
-[Report an Issue](https://github.com/krittaphato3/PiPExtension/issues) · [Request a Feature](https://github.com/krittaphato3/PiPExtension/issues)
+Found a bug? [Report it](https://github.com/krittaphato3/PiPExtension/issues) · [Suggest a feature](https://github.com/krittaphato3/PiPExtension/issues)
 
 </div>

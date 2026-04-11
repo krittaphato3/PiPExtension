@@ -76,12 +76,13 @@ const State = {
   lastErrorTime: 0
 };
 
-// Optimized settings cache - reduces chrome.storage.sync calls
+// Optimized settings cache — reads from BOTH local and sync storage,
+// with local taking precedence (popup saves to local instantly for speed).
 const CachedSettings = {
   data: null,
   timestamp: 0,
   CACHE_DURATION: 5000, // 5 seconds cache
-  
+
   async get(keys = null) {
     const now = Date.now();
     if (this.data && (now - this.timestamp) < this.CACHE_DURATION) {
@@ -90,10 +91,17 @@ const CachedSettings = {
       }
       return this.data;
     }
-    
-    const result = await chrome.storage.sync.get(keys);
-    this.data = { ...this.data, ...result };
+
+    // Read from BOTH storage areas simultaneously — local overrides sync
+    const [localResult, syncResult] = await Promise.all([
+      chrome.storage.local.get(keys),
+      chrome.storage.sync.get(keys),
+    ]);
+
+    // Merge: sync as base, local takes precedence for recent changes
+    this.data = { ...syncResult, ...localResult };
     this.timestamp = now;
+
     if (keys) {
       return keys.reduce((acc, k) => ({...acc, [k]: this.data[k]}), {});
     }
@@ -178,7 +186,7 @@ const Debounce = (func, delay) => {
   let timeout;
   return (...args) => {
     clearTimeout(timeout);
-    timeout = setTimeout(() => func.apply(this, args), delay);
+    timeout = setTimeout(() => func(...args), delay);
   };
 };
 
@@ -405,10 +413,24 @@ function handleRuntimeMessage(req, sender, sendResponse) {
       const el = findMediaById(req.id);
       if (el) {
         if (req.command === 'pip') {
-          if (document.pictureInPictureElement === el) {
-            document.exitPictureInPicture();
+          // Route through FullPiP engine to apply all settings (scale mode, zoom, etc.)
+          if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') {
+            launchVideoPiP(el).then(() => {
+              sendResponse({ success: true });
+            }).catch(err => {
+              // Fallback: try native PiP if FullPiP fails
+              try { el.requestPictureInPicture(); } catch {}
+              sendResponse({ success: true });
+            });
+            return true; // Async response
           } else {
-            el.requestPictureInPicture().catch(console.error);
+            // For images/other elements, use native Document PiP
+            launchElementPiP(el).then(() => {
+              sendResponse({ success: true });
+            }).catch(err => {
+              sendResponse({ success: false, error: err?.message || 'Failed' });
+            });
+            return true; // Async response
           }
         } else if (req.command === 'togglePlay') {
           el.paused ? el.play() : el.pause();
@@ -439,7 +461,10 @@ function handleRuntimeMessage(req, sender, sendResponse) {
       }
       break;
     case "closeAllPip":
+      // Close local Document PiP windows tracked by content script
       closeAllPipWindows();
+      // Also tell background to close popup PiP windows it tracks
+      chrome.runtime.sendMessage({ action: 'closeAllPip' }).catch(() => {});
       sendResponse({ success: true });
       break;
     case "getPipCount":
@@ -448,8 +473,25 @@ function handleRuntimeMessage(req, sender, sendResponse) {
     case "ping":
       sendResponse({ status: 'ok', pipCount: State.pipWindows.size });
       break;
+
+    // Hybrid PiP control from popup UI
+    case "launchVideoPopup":
+      launchVideoPiP(req.target || req.srcUrl, {
+        screenId: req.screenId,
+        left: req.left,
+        top: req.top,
+        forcePopup: req.forcePopup !== false,
+        width: req.width,
+        height: req.height,
+      }).then(() => {
+        sendResponse({ success: true });
+      }).catch(err => {
+        sendResponse({ success: false, error: err?.message || String(err) });
+      });
+      return true; // Keep channel open for async response
   }
-  return true; // Keep channel open for async response
+  // Unhandled message — don't keep channel open
+  return false;
 }
 
 // ============================================================================
@@ -559,57 +601,56 @@ async function launchElementPiP(sourceNode) {
     return;
   }
 
-  // Check max windows limit - using cached settings
-  const settings = await CachedSettings.get(['maxPipWindows']);
+  // Load ALL settings needed for proper styling
+  const settings = await CachedSettings.get([
+    'maxPipWindows',
+    'pipScaleMode',
+    'pipBackgroundColor',
+  ]);
+
   if (State.pipWindows.size >= (settings.maxPipWindows || CONFIG.MAX_PIP_WINDOWS)) {
     showToast(`Maximum ${settings.maxPipWindows || CONFIG.MAX_PIP_WINDOWS} PiP windows allowed`, 'error');
     return;
   }
-  
+
   if (sourceNode.classList.contains(CONFIG.PICKER_HIGHLIGHT_CLASS)) {
     sourceNode.classList.remove(CONFIG.PICKER_HIGHLIGHT_CLASS);
   }
-  
+
   try {
     const rect = sourceNode.getBoundingClientRect();
     const pipId = generateId();
-    
+
     const pipWindow = await window.documentPictureInPicture.requestWindow({
       width: Math.max(CONFIG.MIN_WINDOW_WIDTH, rect.width || 500),
       height: Math.max(CONFIG.MIN_WINDOW_HEIGHT, rect.height || 500)
     });
-    
+
     const doc = pipWindow.document;
-    
-    // Copy styles from main document (with error handling)
-    Array.from(document.styleSheets).forEach(styleSheet => {
-      try {
-        if (styleSheet.href) {
-          const link = doc.createElement('link');
-          link.rel = 'stylesheet';
-          link.href = styleSheet.href;
-          doc.head.append(link);
-        } else if (styleSheet.cssRules) {
-          const style = doc.createElement('style');
-          Array.from(styleSheet.cssRules).forEach(rule => style.textContent += rule.cssText);
-          doc.head.append(style);
-        }
-      } catch (e) {
-        // Expected for cross-origin stylesheets - log for debugging
-        console.debug('[FullPiP] Skipping cross-origin stylesheet:', styleSheet.href || 'inline');
-      }
-    });
-    
-    // Add base styles
+
+    // Add base styles — apply scale mode and background from settings
+    const scaleMode = settings.pipScaleMode || 'normal';
+
+    // Build CSS based on scale mode
+    let contentCSS = '';
+    if (scaleMode === 'normal') {
+      contentCSS = `max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;`;
+    } else {
+      contentCSS = `width: 100%; height: 100%; object-fit: ${scaleMode};`;
+    }
+
     const baseStyle = doc.createElement('style');
     baseStyle.textContent = `
-      body { 
-        margin: 0; 
-        display: grid; 
-        place-items: center; 
-        height: 100vh; 
+      body {
+        margin: 0;
+        display: grid;
+        place-items: center;
+        height: 100vh;
         background: transparent;
         overflow: hidden;
+      }
+      img, video, canvas, svg, iframe, div {
+        ${contentCSS}
       }
       .fullpip-close-btn {
         position: absolute;
@@ -634,7 +675,10 @@ async function launchElementPiP(sourceNode) {
       .fullpip-close-btn svg { width: 14px; height: 14px; }
     `;
     doc.head.append(baseStyle);
-    
+
+    // Apply background setting from settings
+    updateBackgroundStyle(doc.body, settings.pipBackgroundColor || 'auto');
+
     // Create close button
     const closeBtn = doc.createElement('button');
     closeBtn.className = 'fullpip-close-btn';
@@ -674,35 +718,87 @@ async function launchElementPiP(sourceNode) {
 }
 
 // ============================================================================
-// VIDEO PiP
+// VIDEO PiP (Unified — always routes through PiPFactory)
 // ============================================================================
-async function launchVideoPiP(target) {
+/**
+ * Opens a video PiP window via PiPFactory, which handles:
+ *   1. Cross-tab native PiP state tracking
+ *   2. Routing: native (first) vs popup (second+)
+ *   3. Fallback from native → popup if native fails
+ *
+ * @param {HTMLVideoElement|string} target - Video element or URL string
+ * @param {Object} options
+ */
+async function launchVideoPiP(target, options = {}) {
   let video;
   if (target instanceof HTMLVideoElement) {
     video = target;
   } else if (typeof target === 'string') {
+    // Try exact src match first, then fall back to partial match
     video = document.querySelector(`video[src="${target}"]`);
+    if (!video) {
+      // Try matching by currentSrc (handles blob URLs, encoded URLs)
+      const allVideos = document.querySelectorAll('video');
+      for (const v of allVideos) {
+        if (v.currentSrc === target || v.src === target) {
+          video = v;
+          break;
+        }
+      }
+    }
   }
   if (!video) video = findMainVideo();
-  
+
   if (!video) {
     showToast('No video found on page', 'error');
     return;
   }
-  
+
   if (video.disablePictureInPicture) {
     showToast('PiP is disabled by this website', 'error');
     return;
   }
-  
+
+  const { screenId, left, top, forcePopup } = options;
+
+  // ── Determine if we should force popup ─────────────────────────────────
+  // Force popup when: explicit flag, multi-monitor options, or a native
+  // video PiP is already active (document.pictureInPictureElement).
+  // PiPFactory also checks its own cross-tab state internally.
+  const shouldForcePopup = !!(screenId || left || top || forcePopup || document.pictureInPictureElement);
+
   try {
-    if (document.pictureInPictureElement) {
-      await document.exitPictureInPicture();
+    if (typeof PiPFactory === 'undefined') {
+      // Fallback: direct native PiP if factory isn't loaded
+      await video.requestPictureInPicture();
+      showToast('Video PiP activated', 'success', 1500);
+      return;
     }
-    await video.requestPictureInPicture();
-    showToast('Video PiP activated', 'success', 1500);
-  } catch (e) { 
-    console.error("[FullPiP] Video Error:", e);
+
+    // Delegate to PiPFactory — it handles routing + tracking
+    const result = await PiPFactory.create({
+      videoElement: video,
+      width: options.width,
+      height: options.height,
+      screenId,
+      left,
+      top,
+      forcePopup: shouldForcePopup,
+    });
+
+    if (result.success) {
+      showToast(`Video PiP opened (${result.method})`, 'success', 1500);
+    } else {
+      // If factory failed, try bare-metal native as last resort
+      if (!document.pictureInPictureElement) {
+        await video.requestPictureInPicture();
+        showToast('Video PiP activated (fallback)', 'success', 1500);
+      } else {
+        showToast(`PiP failed: ${result.error || 'unknown error'}`, 'error');
+      }
+    }
+  } catch (e) {
+    console.error('[FullPiP] launchVideoPiP error:', e);
     showToast('Failed to start video PiP', 'error');
   }
 }
@@ -911,6 +1007,12 @@ function closeAllPipWindows() {
   if (State.observer) State.observer.disconnect();
   State.observer = null;
 
+  // Clear cross-tab native PiP state to prevent stale state
+  // that would cause future PiP attempts to use popup mode unnecessarily
+  if (typeof NativePipStateManager !== 'undefined') {
+    NativePipStateManager.clearState();
+  }
+
   // Disconnect service worker port
   if (serviceWorkerPort) {
     serviceWorkerPort.disconnect();
@@ -929,7 +1031,8 @@ function updateBackgroundStyle(bodyElement, bgSetting) {
   let bgColor = '#000';
   let bgImage = 'none';
   let bgSize = 'auto';
-  
+  let bgPosition = '0 0';
+
   if (bgSetting === 'white') bgColor = '#ffffff';
   else if (bgSetting === 'black') bgColor = '#000000';
   else if (bgSetting === 'grid') {
@@ -939,15 +1042,40 @@ function updateBackgroundStyle(bodyElement, bgSetting) {
                linear-gradient(45deg, transparent 75%, #ccc 75%),
                linear-gradient(-45deg, transparent 75%, #ccc 75%)`;
     bgSize = '20px 20px';
+    bgPosition = '0 0, 0 10px, 10px -10px, -10px 0px';
   }
-  
+
   bodyElement.style.backgroundColor = bgColor;
   bodyElement.style.backgroundImage = bgImage;
   bodyElement.style.backgroundSize = bgSize;
+  bodyElement.style.backgroundPosition = bgPosition;
 }
 
 function setupPipStyles(doc, sourceNode, bgSetting, scaleMode) {
   const style = doc.createElement('style');
+
+  // ── Scale Mode Styles ──────────────────────────────────────────────
+  // "normal"  → natural size, centered, black bars where content doesn't fill
+  // "contain" → scales to fit entirely within window (may letterbox)
+  // "cover"   → scales to fill entire window (may crop)
+  // "fill"    → stretches to fill (may distort)
+  let contentCSS = '';
+  if (scaleMode === 'normal') {
+    contentCSS = `
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    `;
+  } else {
+    contentCSS = `
+      width: 100%;
+      height: 100%;
+      object-fit: ${scaleMode};
+    `;
+  }
+
   style.textContent = `
     body {
       margin: 0;
@@ -955,14 +1083,12 @@ function setupPipStyles(doc, sourceNode, bgSetting, scaleMode) {
       display: flex; justify-content: center; align-items: center;
       overflow: hidden;
       cursor: default;
-      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
     }
     img, video {
       display: block;
-      width: 100%; height: 100%;
-      object-fit: ${scaleMode};
-      user-select: none; 
+      user-select: none;
       will-change: transform;
+      ${contentCSS}
     }
     .fullpip-close-btn {
       position: absolute;
@@ -1033,33 +1159,46 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
         break;
       case 'ArrowUp':
         pY += step;
-        updateTransform();
         break;
       case 'ArrowDown':
         pY -= step;
-        updateTransform();
         break;
       case 'ArrowLeft':
         pX += step;
-        updateTransform();
         break;
       case 'ArrowRight':
         pX -= step;
-        updateTransform();
         break;
       case '+':
       case '=':
         scale = Math.min(CONFIG.ZOOM_MAX, scale * CONFIG.ZOOM_STEP_IN);
-        updateTransform();
         break;
       case '-':
-        scale = Math.max(CONFIG.ZOOM_MIN, scale * CONFIG.ZOOM_STEP_OUT);
-        updateTransform();
+        // ── Edge Resistance ──
+        // When ON: cannot zoom below 1.0 (full fit = fills the window)
+        // When OFF: can zoom down to CONFIG.ZOOM_MIN (also 1.0 by default)
+        if (settings.pipEdgeLock) {
+          scale = Math.max(1.0, scale * CONFIG.ZOOM_STEP_OUT);
+        } else {
+          scale = Math.max(CONFIG.ZOOM_MIN, scale * CONFIG.ZOOM_STEP_OUT);
+        }
         break;
       case CONFIG.ZOOM_RESET_KEY:
         scale = 1; pX = 0; pY = 0;
-        updateTransform();
         break;
+    }
+
+    // ── Edge Resistance for pan arrows ──────────────────────────
+    // When Edge Lock is ON, prevent panning at scale <= 1.0
+    // (image fills window, there's nothing outside to pan to)
+    const isArrowKey = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key);
+    if (isArrowKey) {
+      if (settings.pipEdgeLock && scale <= 1.0) {
+        // Clamp pan to zero when at or below full fit
+        pX = 0;
+        pY = 0;
+      }
+      updateTransform();
     }
   };
   doc.addEventListener('keydown', keydownListener);
@@ -1078,19 +1217,26 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
   img.addEventListener('wheel', (e) => {
     e.preventDefault();
     const speed = parseFloat(settings.pipZoomSpeed) || 1.0;
-    const safeFactor = e.deltaY > 0 
-      ? Math.max(0.5, 1 - (0.1 * speed)) 
+    const safeFactor = e.deltaY > 0
+      ? Math.max(0.5, 1 - (0.1 * speed))
       : Math.min(2, 1 + (0.1 * speed));
     let newScale = scale * safeFactor;
-    
-    if (settings.pipZoomSmartLimit) {
+
+    // ── Edge Resistance ────────────────────────────────────────────────
+    // When pipEdgeLock is ON, scale cannot go below 1.0.
+    // At scale=1 the image fills the window (full fit). Allowing scale<1
+    // would shrink the image and expose empty borders — edge lock prevents
+    // this. When OFF, allow free zoom down to 0.01.
+    if (settings.pipEdgeLock) {
+      newScale = Math.max(1.0, newScale);
+    } else if (settings.pipZoomSmartLimit) {
       newScale = Math.max(CONFIG.ZOOM_MIN, newScale);
     } else {
       newScale = Math.max(0.01, newScale);
     }
-    
+
     // Reset position when zoom returns to 1.0
-    if (newScale === CONFIG.ZOOM_MIN) {
+    if (newScale <= 1.001) {
       pX = 0;
       pY = 0;
     }
@@ -1122,14 +1268,27 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
       const deltaY = (e.clientY - startY);
       let nextPx = basePx + (deltaX / scale);
       let nextPy = basePy + (deltaY / scale);
-      
+
+      // ── Edge Resistance during drag ─────────────────────────────
+      // At scale=1: image fills the window, pan must be locked to 0
+      // At scale>1: allow pan but prevent showing empty borders outside the image
       if (settings.pipEdgeLock) {
-        const limitX = (winW / 2) / scale;
-        const limitY = (winH / 2) / scale;
-        nextPx = Math.max(-limitX, Math.min(limitX, nextPx));
-        nextPy = Math.max(-limitY, Math.min(limitY, nextPy));
+        if (scale <= 1.0) {
+          // At or below full fit — image fills the window, no panning allowed
+          nextPx = 0;
+          nextPy = 0;
+        } else {
+          // Zoomed in — clamp pan so image edges can't be pulled inside the window.
+          // At scale=2, the image is 2x the window size, so we can pan up to ±50% of window size.
+          // At scale=1.5, we can pan up to ±33% of window size.
+          // General formula: max pan = (window/2) * (1 - 1/scale)
+          const maxPanX = (winW / 2) * (1 - 1 / scale);
+          const maxPanY = (winH / 2) * (1 - 1 / scale);
+          nextPx = Math.max(-maxPanX, Math.min(maxPanX, nextPx));
+          nextPy = Math.max(-maxPanY, Math.min(maxPanY, nextPy));
+        }
       }
-      
+
       pX = nextPx;
       pY = nextPy;
       updateTransform();
@@ -1171,14 +1330,15 @@ function extractBgImage(node) {
 // AUTO PiP MODE
 // ============================================================================
 let autoPipListeners = []; // Track auto-PiP listeners for cleanup
+let autoPipInitialized = false; // Separate flag for auto-PiP
 
 (function initAutoPip() {
   // Prevent duplicate initialization
-  if (isInitialized) return;
+  if (autoPipInitialized) return;
 
   CachedSettings.get(['autoPipEnabled']).then(({ autoPipEnabled }) => {
     if (!autoPipEnabled) {
-      isInitialized = true;
+      autoPipInitialized = true;
       return;
     }
 
@@ -1207,22 +1367,198 @@ let autoPipListeners = []; // Track auto-PiP listeners for cleanup
       document.addEventListener(evt, attemptPip, opts);
       autoPipListeners.push({ evt, handler: attemptPip, opts });
     });
-    
-    isInitialized = true;
+
+    autoPipInitialized = true;
   });
 })();
+
+// ============================================================================
+// USAGE EXAMPLES - Button Click Integration with PiPFactory
+// ============================================================================
+
+/**
+ * Example 1: Simple button click → Open PiP (auto-routes to native or popup)
+ *
+ * Add this to any page with a video:
+ *   <button id="openPipBtn">Open PiP</button>
+ */
+function setupPipButtonExample() {
+  // Wait for DOM to be ready
+  const openPipBtn = document.getElementById('openPipBtn');
+  if (!openPipBtn) return;
+
+  openPipBtn.addEventListener('click', async () => {
+    // Find the main video on the page
+    const video = findMainVideo();
+    if (!video) {
+      showToast('No video found on page', 'error');
+      return;
+    }
+
+    // Call PiPFactory.create() - it will automatically choose:
+    // - Native PiP if no native PiP is open
+    // - Popup PiP if a native PiP is already open (prevents replacement)
+    const result = await PiPFactory.create({
+      videoElement: video,
+      width: 480,
+      height: 270,
+    });
+
+    if (result.success) {
+      showToast(`PiP opened via ${result.method} mode`, 'success');
+      console.log('[FullPiP] PiP result:', result);
+    } else {
+      showToast(`Failed: ${result.error}`, 'error');
+    }
+  });
+}
+
+/**
+ * Example 2: Force popup mode (bypass native PiP)
+ */
+function setupForcePopupExample() {
+  const forcePopupBtn = document.getElementById('forcePopupBtn');
+  if (!forcePopupBtn) return;
+
+  forcePopupBtn.addEventListener('click', async () => {
+    const video = findMainVideo();
+    if (!video) {
+      showToast('No video found', 'error');
+      return;
+    }
+
+    // Force popup mode even if native is available
+    const result = await PiPFactory.create({
+      videoElement: video,
+      forcePopup: true, // ← Forces popup path
+      width: 640,
+      height: 360,
+    });
+
+    if (result.success) {
+      showToast(`Popup PiP opened (window ID: ${result.windowId})`, 'success');
+    }
+  });
+}
+
+/**
+ * Example 3: Multi-monitor positioning (requires Chrome 102+)
+ */
+function setupMultiMonitorExample() {
+  const multiMonitorBtn = document.getElementById('multiMonitorBtn');
+  if (!multiMonitorBtn) return;
+
+  multiMonitorBtn.addEventListener('click', async () => {
+    const video = findMainVideo();
+    if (!video) {
+      showToast('No video found', 'error');
+      return;
+    }
+
+    // Get available displays from background
+    const displays = await chrome.runtime.sendMessage({ action: 'getDisplays' });
+    if (!displays?.success || displays.displays.length < 2) {
+      showToast('Only one display detected, opening on current screen', 'warning');
+      // Fallback to single screen
+      const result = await PiPFactory.create({
+        videoElement: video,
+        forcePopup: true,
+      });
+      return;
+    }
+
+    // Open on second monitor
+    const secondDisplay = displays.displays.find(d => !d.isPrimary);
+    const result = await PiPFactory.create({
+      videoElement: video,
+      screenId: secondDisplay.id,
+      forcePopup: true, // Required for multi-monitor
+      width: 480,
+      height: 270,
+    });
+
+    if (result.success) {
+      showToast(`Opened on ${secondDisplay.name}`, 'success');
+    }
+  });
+}
+
+/**
+ * Example 4: Check PiP state before opening
+ */
+async function checkPipStateBeforeOpen() {
+  // Get current PiP state (cross-tab aware)
+  const state = await chrome.runtime.sendMessage({ action: 'getPipState' });
+
+  console.log('Native PiP open:', state.isOpen);
+  console.log('Active native PiP ID:', state.pipId);
+  console.log('Popup windows open:', state.popupCount);
+  console.log('Any PiP active:', state.hasAnyPip);
+
+  if (state.isOpen) {
+    console.log('A native PiP is open in another tab. New PiP will use popup mode.');
+  }
+
+  return state;
+}
+
+/**
+ * Example 5: Close all PiP windows from content script (example usage)
+ * NOTE: The real closeAllPipWindows() is defined above at line ~949.
+ * This example shows how to use the background message for cross-tab close.
+ */
+async function _example_closeAllPipViaBackground() {
+  const result = await chrome.runtime.sendMessage({ action: 'closeAllPip' });
+  if (result?.success) {
+    showToast(`Closed ${result.popups} popup(s) + native: ${result.native}`, 'success');
+  }
+  return result;
+}
+
+// Auto-setup examples if buttons exist on the page
+// (Uncomment these lines to enable the examples)
+// setupPipButtonExample();
+// setupForcePopupExample();
+// setupMultiMonitorExample();
 
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
 
-// Prevent duplicate initialization when content script is re-injected
-if (isInitialized) {
-  console.debug('[FullPiP] Already initialized, skipping');
-} else {
+// Prevent duplicate initialization across:
+//   1. Module-level re-runs (isInitialized variable)
+//   2. Content script re-injection (all_frames, navigation) — uses shared
+//      window marker since each injection gets a new JS context/isolated world
+//   3. Multiple iframes (all_frames: true) — each frame gets its own instance,
+//      which is intentional since each frame has its own DOM to monitor
+const FULLPIP_INIT_MARKER = '__fullpipContentScriptInitialized';
+
+(function initContentScript() {
+  // Cross-world guard: persists across script re-injections in the same frame
+  if (window[FULLPIP_INIT_MARKER]) {
+    console.debug('[FullPiP] Already initialized (cross-world guard), skipping');
+    return;
+  }
+
+  // Module-level guard
+  if (isInitialized) {
+    console.debug('[FullPiP] Already initialized (module-level), skipping');
+    return;
+  }
+
   setupGlobalErrorHandlers();
   setupEventListeners();
+
+  // Mark as initialized in both scopes
   isInitialized = true;
+  window[FULLPIP_INIT_MARKER] = true;
+})();
+
+// ── Wire content.js showToast into PiPFactory ──────────────────────────────
+// PiPFactory calls this._showToast() but has no UI in content script context.
+// Connect it to our content.js showToast so users see feedback.
+if (typeof PiPFactory !== 'undefined' && typeof showToast === 'function') {
+  PiPFactory._showToast = showToast;
 }
 
 // Establish persistent connection to keep service worker alive
@@ -1250,13 +1586,32 @@ function establishServiceWorkerConnection() {
 sendSafeMessage({ action: "contentScriptReady" }, 'Content script ready handshake');
 
 // Cleanup on page unload/navigation
+// This MUST be synchronous — async operations are unreliable during pagehide.
 window.addEventListener('pagehide', () => {
+  // 1. Close all local Document PiP windows (synchronous)
   closeAllPipWindows();
+
+  // 2. Close Document PiP window if open (synchronous)
+  if (window.documentPictureInPicture?.window) {
+    try { window.documentPictureInPicture.window.close(); } catch {}
+  }
+
+  // 3. Exit standard video PiP if active (synchronous best-effort)
+  if (document.pictureInPictureElement) {
+    try { document.exitPictureInPicture(); } catch {}
+  }
+
+  // 4. Clean up all event listeners
   cleanupEventListeners();
+
+  // 5. Disconnect service worker port
   if (serviceWorkerPort) {
     serviceWorkerPort.disconnect();
     serviceWorkerPort = null;
   }
+
+  // 6. Notify background (best-effort, may not complete)
+  try { chrome.runtime.sendMessage({ action: 'tabClosed' }); } catch {}
 });
 
 window.addEventListener('beforeunload', () => {

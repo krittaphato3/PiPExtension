@@ -1,16 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "FullPiP - Ultimate Picture-in-Picture",
-  "version": "3.0.0",
+  "name": "FullPiP — Picture-in-Picture",
+  "version": "4.0.0",
   "author": "krittaphato3",
-  "description": "Professional-grade PiP tool with QOL enhancements, multi-PiP support, and full customization.",
+  "description": "Smart multi-window PiP that opens additional windows automatically. Right-click any video or press Alt+P.",
   "permissions": [
     "contextMenus",
     "storage",
     "activeTab",
     "scripting",
-    "documentPictureInPicture",
-    "notifications"
+    "notifications",
+    "windows",
+    "system.display"
   ],
   "background": {
     "service_worker": "background.js"
@@ -18,7 +19,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["content.js", "lib/pipFactory.js"],
       "run_at": "document_idle",
       "all_frames": true,
       "match_about_blank": true
@@ -26,7 +27,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "FullPiP Control Center"
+    "default_title": "FullPiP"
   },
   "commands": {
     "toggle-pip": {
@@ -52,7 +53,7 @@
     }
   },
   "web_accessible_resources": [{
-    "resources": ["*.png", "*.svg"],
+    "resources": ["*.png", "*.svg", "player.html", "player.js"],
     "matches": ["<all_urls>"]
   }]
 }
