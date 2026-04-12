@@ -411,7 +411,6 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
       const hasPopupPip = localPopupCount > 0 || backgroundPopupCount > 0;
 
       console.log('[FullPiP] Alt+P toggle check: native=', hasNativePip, 'localPopups=', localPopupCount, 'bgPopups=', backgroundPopupCount);
-      console.log('[FullPiP] PiP state from background:', JSON.stringify(state));
 
       if (hasNativePip || hasPopupPip) {
         // PiP is open → close it
@@ -513,12 +512,10 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
 
     // ✅ FIX: Handle popup window closed notification from service worker
     case "popupWindowClosed":
-      console.log('[FullPiP] 🔔 Popup window closed notification received:', req.windowId, 'sourceId:', req.sourceId);
+      console.log('[FullPiP] Popup window closed notification:', req.windowId);
       // Clean up local dedup tracking
       if (req.sourceId && typeof PiPFactory !== 'undefined') {
-        console.log('[FullPiP] Unregistering source:', req.sourceId);
         PiPFactory._unregisterSource(req.sourceId);
-        console.log('[FullPiP] Active sources after cleanup:', PiPFactory.getActiveSourceCount());
       }
       sendResponse({ success: true });
       break;
