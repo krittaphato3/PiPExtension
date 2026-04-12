@@ -386,7 +386,7 @@ function cleanupEventListeners() {
 // ============================================================================
 // MESSAGE HANDLER
 // ============================================================================
-function handleRuntimeMessage(req, sender, sendResponse) {
+async function handleRuntimeMessage(req, sender, sendResponse) {
   switch (req.action) {
     case "contextMenuTrigger":
       req.type === 'video' ? launchVideoPiP(req.srcUrl) : launchImagePiP();
@@ -394,15 +394,42 @@ function handleRuntimeMessage(req, sender, sendResponse) {
       break;
     case "shortcutTrigger":
       // ✅ FIX: Add toggle logic - close if PiP is open, open if closed
-      const hasNativePip = typeof window !== 'undefined' && window.documentPictureInPicture?.window;
-      const hasPopupPip = State.pipWindows.size > 0;
+      // Check for native PiP (both documentPictureInPicture and standard video PiP)
+      const hasDocPip = typeof window !== 'undefined' && window.documentPictureInPicture?.window;
+      const hasVideoPip = typeof document !== 'undefined' && document.pictureInPictureElement;
+      const hasNativePip = hasDocPip || hasVideoPip;
+
+      // Check for popup PiP windows (both local and background-tracked)
+      const localPopupCount = State.pipWindows.size;
+      let backgroundPopupCount = 0;
+      try {
+        const state = await chrome.runtime.sendMessage({ action: 'getPipState' });
+        backgroundPopupCount = state?.popupCount || 0;
+      } catch (e) {
+        // Background not available
+      }
+      const hasPopupPip = localPopupCount > 0 || backgroundPopupCount > 0;
+
+      console.log('[FullPiP] Alt+P toggle check: native=', hasNativePip, 'localPopups=', localPopupCount, 'bgPopups=', backgroundPopupCount);
 
       if (hasNativePip || hasPopupPip) {
         // PiP is open → close it
         console.log('[FullPiP] Alt+P toggle: PiP detected, closing');
+
+        // Close native PiP
+        if (hasVideoPip) {
+          document.exitPictureInPicture().catch(() => {});
+        }
+        if (hasDocPip) {
+          window.documentPictureInPicture.window.close();
+        }
+
+        // Close local popup PiP windows
         closeAllPipWindows();
-        // Also tell background to close popup PiP windows
+
+        // Also tell background to close popup PiP windows it tracks
         chrome.runtime.sendMessage({ action: 'closeAllPip' }).catch(() => {});
+
         showToast('PiP closed', 'info', 1500);
         sendResponse({ success: true, action: 'closed' });
       } else {
@@ -482,6 +509,27 @@ function handleRuntimeMessage(req, sender, sendResponse) {
       chrome.runtime.sendMessage({ action: 'closeAllPip' }).catch(() => {});
       sendResponse({ success: true });
       break;
+
+    // ✅ FIX: Handle popup window closed notification from service worker
+    case "popupWindowClosed":
+      console.log('[FullPiP] Popup window closed notification:', req.windowId);
+      // Clean up local dedup tracking
+      if (req.sourceId && typeof PiPFactory !== 'undefined') {
+        PiPFactory._unregisterSource(req.sourceId);
+      }
+      sendResponse({ success: true });
+      break;
+
+    // ✅ FIX: Pause source video when popup opens
+    case "pauseSourceVideo":
+      const videoToPause = findMainVideo();
+      if (videoToPause && !videoToPause.paused) {
+        videoToPause.pause();
+        console.log('[FullPiP] Paused source video for popup');
+      }
+      sendResponse({ success: true });
+      break;
+
     case "getPipCount":
       sendResponse({ count: State.pipWindows.size });
       break;
