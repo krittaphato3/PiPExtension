@@ -5,6 +5,7 @@
 
 const KEYS = {
     THEME: 'themePref',
+    PIP_MODE: 'pipMode',
     AUTO_PIP: 'autoPipEnabled',
     SHOW_NOTIFICATIONS: 'showNotifications',
     SCALE_MODE: 'pipScaleMode',
@@ -22,6 +23,7 @@ const KEYS = {
 
 const DEFAULTS = {
     [KEYS.THEME]: 'dark',
+    [KEYS.PIP_MODE]: 'hybrid',
     [KEYS.AUTO_PIP]: false,
     [KEYS.SHOW_NOTIFICATIONS]: true,
     [KEYS.SCALE_MODE]: 'normal',
@@ -88,9 +90,16 @@ const els = {
     toastDurationLabel: document.getElementById('toastDurationVal'),
     pipCount: document.getElementById('pipCount'),
     pipStatusBar: document.getElementById('pipStatusBar'),
+    pipModeBadge: document.getElementById('pipModeBadge'),
     mediaCountBadge: document.getElementById('mediaCountBadge'),
     toastContainer: document.getElementById('toastContainer'),
+    // Mode UI elements
+    pipModeSelect: document.getElementById('pipMode'),
+    modeDescription: document.getElementById('modeDescription'),
+    windowSettingsSection: document.getElementById('windowSettingsSection'),
+    multiMonitorSection: document.getElementById('multiMonitorSection'),
     inputs: {
+        [KEYS.PIP_MODE]: document.getElementById('pipMode'),
         [KEYS.AUTO_PIP]: document.getElementById('autoPipEnabled'),
         [KEYS.SHOW_NOTIFICATIONS]: document.getElementById('showNotifications'),
         [KEYS.SCALE_MODE]: document.getElementById('pipScaleMode'),
@@ -111,6 +120,43 @@ const ICONS = {
     moon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>',
     sun: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>',
 };
+
+// Mode descriptions for UI
+const MODE_DESCRIPTIONS = {
+    api: '<strong>PiP API Mode:</strong> Uses Chrome\'s native Picture-in-Picture API only. Best quality, but only one PiP window at a time.',
+    popup: '<strong>Popup Mode:</strong> Opens PiP in popup windows. Supports multiple simultaneous PiP windows and multi-monitor.',
+    hybrid: '<strong>Hybrid Mode:</strong> Tries native PiP API first, falls back to popup windows for multi-PiP. Best of both worlds.'
+};
+
+// ============================================================================
+// MODE MANAGEMENT
+// ============================================================================
+function updateModeUI(mode) {
+    // Update mode badge
+    if (els.pipModeBadge) {
+        els.pipModeBadge.textContent = mode.charAt(0).toUpperCase() + mode.slice(1);
+        els.pipModeBadge.dataset.mode = mode;
+    }
+
+    // Update mode description
+    if (els.modeDescription) {
+        els.modeDescription.innerHTML = MODE_DESCRIPTIONS[mode] || MODE_DESCRIPTIONS.hybrid;
+    }
+
+    // Show/hide window settings (only for popup and hybrid modes)
+    if (els.windowSettingsSection) {
+        const showWindowSettings = mode === 'popup' || mode === 'hybrid';
+        els.windowSettingsSection.style.display = showWindowSettings ? 'block' : 'none';
+    }
+
+    // Show/hide multi-monitor settings (only for popup and hybrid modes)
+    if (els.multiMonitorSection) {
+        const showMultiMonitor = mode === 'popup' || mode === 'hybrid';
+        els.multiMonitorSection.style.display = showMultiMonitor ? 'block' : 'none';
+    }
+
+    console.log(`[FullPiP] Mode set to: ${mode.toUpperCase()}`);
+}
 
 // ============================================================================
 // ERROR HANDLING - Global Error Handlers for Popup
@@ -216,6 +262,7 @@ function showToast(message, type = 'info', duration = 2500) {
 // ============================================================================
 let saveTimeout;
 let pendingSyncUpdates = {}; // Queue for sync migration
+let isSyncing = false; // Prevent concurrent sync operations
 
 // Optimized save: immediate local save + debounced sync migration
 function saveSetting(key, value, showFeedback = false) {
@@ -229,19 +276,7 @@ function saveSetting(key, value, showFeedback = false) {
 
     // 3. Debounce sync migration (2000ms after interaction stops)
     saveTimeout = setTimeout(() => {
-        const updates = { ...pendingSyncUpdates };
-        pendingSyncUpdates = {}; // Clear queue
-
-        // Migrate to sync storage
-        chrome.storage.sync.set(updates, () => {
-            if (chrome.runtime.lastError) {
-                console.warn('[FullPiP] Sync migration failed:', chrome.runtime.lastError.message);
-                // Settings are safe in local, retry on next save
-                pendingSyncUpdates = { ...pendingSyncUpdates, ...updates };
-            } else if (showFeedback) {
-                showToast('Setting saved & synced', 'success', 1500);
-            }
-        });
+        flushSyncQueue(showFeedback);
     }, 2000);
 
     // Update cache immediately
@@ -249,10 +284,43 @@ function saveSetting(key, value, showFeedback = false) {
     settingsCache.timestamp = Date.now();
 }
 
+// ✅ FIX: Flush sync queue with proper locking to prevent race conditions
+async function flushSyncQueue(showFeedback = false) {
+    if (isSyncing || Object.keys(pendingSyncUpdates).length === 0) {
+        return;
+    }
+
+    isSyncing = true;
+    const updates = { ...pendingSyncUpdates };
+    pendingSyncUpdates = {}; // Clear queue before sync
+
+    try {
+        await new Promise((resolve, reject) => {
+            chrome.storage.sync.set(updates, () => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve();
+                }
+            });
+        });
+
+        if (showFeedback) {
+            showToast('Setting saved & synced', 'success', 1500);
+        }
+    } catch (error) {
+        console.warn('[FullPiP] Sync migration failed:', error.message);
+        // Re-queue the updates for next save attempt
+        pendingSyncUpdates = { ...pendingSyncUpdates, ...updates };
+    } finally {
+        isSyncing = false;
+    }
+}
+
 function saveDebounced(key, val, labelEl, formatFn) {
     clearTimeout(saveTimeout);
-    
-    // Save immediately to local for instant UI responsiveness
+
+    // Save immediate to local for instant UI responsiveness
     chrome.storage.local.set({ [key]: val });
     pendingSyncUpdates[key] = val;
 
@@ -263,15 +331,7 @@ function saveDebounced(key, val, labelEl, formatFn) {
 
     // Debounce sync migration
     saveTimeout = setTimeout(() => {
-        const updates = { ...pendingSyncUpdates };
-        pendingSyncUpdates = {};
-
-        chrome.storage.sync.set(updates, () => {
-            if (chrome.runtime.lastError) {
-                console.warn('[FullPiP] Sync migration failed:', chrome.runtime.lastError.message);
-                pendingSyncUpdates = { ...pendingSyncUpdates, ...updates };
-            }
-        });
+        flushSyncQueue(false);
     }, 2000);
 }
 
@@ -766,13 +826,13 @@ async function updatePipCount() {
         const val = items[key] !== undefined ? items[key] : DEFAULTS[key];
         const el = els.inputs[key];
         if (!el) return;
-        
+
         if (el.type === 'checkbox') {
             el.checked = val;
         } else {
             el.value = val;
         }
-        
+
         // Update labels
         if (key === KEYS.ZOOM_SPEED && els.speedLabel) {
             els.speedLabel.innerText = val + 'x';
@@ -781,15 +841,19 @@ async function updatePipCount() {
             els.toastDurationLabel.innerText = val + 's';
         }
     });
+
+    // Initialize mode UI based on loaded setting
+    const currentMode = items[KEYS.PIP_MODE] || 'hybrid';
+    updateModeUI(currentMode);
     
     // Set up input listeners
     Object.keys(els.inputs).forEach(key => {
         const el = els.inputs[key];
         if (!el) return;
-        
+
         el.addEventListener('input', (e) => {
             const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-            
+
             if (key === KEYS.ZOOM_SPEED && els.speedLabel) {
                 els.speedLabel.innerText = val + 'x';
                 saveDebounced(key, val, els.speedLabel, v => v + 'x');
@@ -803,6 +867,15 @@ async function updatePipCount() {
             }
         });
     });
+
+    // Mode change listener (special handling for UI updates)
+    if (els.pipModeSelect) {
+        els.pipModeSelect.addEventListener('change', (e) => {
+            const mode = e.target.value;
+            saveSetting(KEYS.PIP_MODE, mode, true);
+            updateModeUI(mode);
+        });
+    }
     
     // Theme toggle
     els.themeBtn.addEventListener('click', () => {

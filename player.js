@@ -87,10 +87,89 @@ function loadVideo() {
   els.player.src = state.videoUrl;
   els.player.load();
 
-  // Attempt autoplay
-  els.player.play().catch((e) => {
-    console.debug('[FullPiP Player] Autoplay prevented:', e.message);
-  });
+  // ── AUTOPLAY HANDLING ──────────────────────────────────────────────────
+  // Modern browsers block autoplay with sound. Strategy:
+  // 1. Try normal play (may succeed if user interacted with page)
+  // 2. If blocked, try muted autoplay (usually allowed)
+  // 3. If still blocked, show play button and wait for user interaction
+  attemptAutoplay();
+}
+
+async function attemptAutoplay() {
+  try {
+    // Attempt 1: Normal autoplay
+    await els.player.play();
+    console.log('[FullPiP Player] Autoplay succeeded');
+  } catch (e) {
+    console.debug('[FullPiP Player] Normal autoplay prevented:', e.message);
+    
+    try {
+      // Attempt 2: Muted autoplay (usually allowed by browsers)
+      console.log('[FullPiP Player] Trying muted autoplay...');
+      els.player.muted = true;
+      await els.player.play();
+      console.log('[FullPiP Player] Muted autoplay succeeded');
+      
+      // Try to unmute after 1 second if user hasn't interacted
+      setTimeout(() => {
+        try {
+          els.player.muted = false;
+          console.log('[FullPiP Player] Attempted to unmute');
+        } catch (e) {
+          // If unmute fails, stay muted
+          console.debug('[FullPiP Player] Could not unmute, staying muted');
+        }
+      }, 1000);
+    } catch (e2) {
+      console.debug('[FullPiP Player] Muted autoplay also prevented:', e2.message);
+      // Attempt 3: Show play button overlay
+      showPlayOverlay();
+    }
+  }
+}
+
+function showPlayOverlay() {
+  hideLoader();
+  
+  // Create play overlay if not exists
+  let overlay = document.getElementById('playOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'playOverlay';
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 30;
+      transition: opacity 0.3s;
+    `;
+    
+    const playIcon = document.createElement('div');
+    playIcon.innerHTML = `
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="white" style="filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5));">
+        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+      </svg>
+    `;
+    overlay.appendChild(playIcon);
+    
+    overlay.addEventListener('click', async () => {
+      try {
+        await els.player.play();
+        overlay.style.opacity = '0';
+        setTimeout(() => overlay.remove(), 300);
+        console.log('[FullPiP Player] User initiated playback');
+      } catch (e) {
+        console.error('[FullPiP Player] User playback failed:', e);
+      }
+    });
+    
+    document.body.appendChild(overlay);
+    console.log('[FullPiP Player] Play overlay shown - waiting for user click');
+  }
 }
 
 function retryLoad() {
@@ -109,7 +188,7 @@ function retryLoad() {
   setTimeout(() => {
     els.player.src = state.videoUrl;
     els.player.load();
-    els.player.play().catch(() => {});
+    attemptAutoplay(); // Use the new autoplay handling
   }, PLAYER_CONFIG.RETRY_DELAY_MS);
 }
 

@@ -393,16 +393,31 @@ function handleRuntimeMessage(req, sender, sendResponse) {
       sendResponse({ success: true });
       break;
     case "shortcutTrigger":
-      const mainVideo = findMainVideo();
-      if (mainVideo) {
-        launchVideoPiP(mainVideo);
-        sendResponse({ success: true, type: 'video' });
-      } else if (State.lastRightClickTarget) {
-        launchImagePiP();
-        sendResponse({ success: true, type: 'image' });
+      // ✅ FIX: Add toggle logic - close if PiP is open, open if closed
+      const hasNativePip = typeof window !== 'undefined' && window.documentPictureInPicture?.window;
+      const hasPopupPip = State.pipWindows.size > 0;
+
+      if (hasNativePip || hasPopupPip) {
+        // PiP is open → close it
+        console.log('[FullPiP] Alt+P toggle: PiP detected, closing');
+        closeAllPipWindows();
+        // Also tell background to close popup PiP windows
+        chrome.runtime.sendMessage({ action: 'closeAllPip' }).catch(() => {});
+        showToast('PiP closed', 'info', 1500);
+        sendResponse({ success: true, action: 'closed' });
       } else {
-        showToast('No media found on page', 'error');
-        sendResponse({ success: false, error: 'No media' });
+        // No PiP → open for main video
+        const mainVideo = findMainVideo();
+        if (mainVideo) {
+          launchVideoPiP(mainVideo);
+          sendResponse({ success: true, type: 'video', action: 'opened' });
+        } else if (State.lastRightClickTarget) {
+          launchImagePiP();
+          sendResponse({ success: true, type: 'image', action: 'opened' });
+        } else {
+          showToast('No media found on page', 'error');
+          sendResponse({ success: false, error: 'No media' });
+        }
       }
       break;
     case "togglePickerMode":
@@ -582,7 +597,18 @@ function handlePickerClick(e) {
   e.preventDefault();
   e.stopPropagation();
   togglePickerMode();
-  launchElementPiP(e.target);
+
+  const target = e.target;
+
+  // ✅ FIX: Detect if clicked element is a video and use appropriate handler
+  if (target.tagName === 'VIDEO' || target.tagName === 'AUDIO') {
+    // Video elements should use launchVideoPiP for proper playback
+    console.log('[FullPiP] Picker clicked on', target.tagName.toLowerCase(), '→ using video PiP');
+    launchVideoPiP(target);
+  } else {
+    // Images and other elements use Document PiP
+    launchElementPiP(target);
+  }
 }
 
 function handlePickerKey(e) {
@@ -731,22 +757,90 @@ async function launchElementPiP(sourceNode) {
  */
 async function launchVideoPiP(target, options = {}) {
   let video;
+
   if (target instanceof HTMLVideoElement) {
+    // Already have the video element
     video = target;
   } else if (typeof target === 'string') {
-    // Try exact src match first, then fall back to partial match
+    // ✅ FIX: Enhanced video URL matching for context menu
+    // Try multiple matching strategies for better compatibility
+
+    // Strategy 1: Exact src attribute match (works for simple .mp4 files)
     video = document.querySelector(`video[src="${target}"]`);
+
+    // Strategy 2: Match by currentSrc (handles blob URLs, encoded URLs, redirects)
     if (!video) {
-      // Try matching by currentSrc (handles blob URLs, encoded URLs)
       const allVideos = document.querySelectorAll('video');
       for (const v of allVideos) {
-        if (v.currentSrc === target || v.src === target) {
+        // Normalize URLs for comparison (decode and remove trailing slashes)
+        const normalizeUrl = (url) => {
+          try {
+            return decodeURIComponent(url).replace(/\/$/, '');
+          } catch {
+            return url;
+          }
+        };
+
+        const normalizedTarget = normalizeUrl(target);
+        const normalizedCurrentSrc = normalizeUrl(v.currentSrc || '');
+        const normalizedSrc = normalizeUrl(v.src || '');
+
+        if (normalizedCurrentSrc === normalizedTarget ||
+            normalizedSrc === normalizedTarget ||
+            v.currentSrc === target ||
+            v.src === target) {
           video = v;
           break;
         }
       }
     }
+
+    // Strategy 3: If target is a blob URL, find video with matching blob URL
+    if (!video && target.startsWith('blob:')) {
+      const allVideos = document.querySelectorAll('video');
+      for (const v of allVideos) {
+        if (v.currentSrc?.startsWith('blob:') || v.src?.startsWith('blob:')) {
+          // Multiple blob videos might exist, pick the first playing one
+          if (!v.paused && v.readyState > 2) {
+            video = v;
+            break;
+          }
+        }
+      }
+      // If no playing video found, just take the first blob video
+      if (!video) {
+        for (const v of allVideos) {
+          if (v.currentSrc?.startsWith('blob:') || v.src?.startsWith('blob:')) {
+            video = v;
+            break;
+          }
+        }
+      }
+    }
+
+    // Strategy 4: Check <source> children for matching URLs
+    if (!video) {
+      const allVideos = document.querySelectorAll('video');
+      for (const v of allVideos) {
+        const sources = v.querySelectorAll('source');
+        for (const source of sources) {
+          if (source.src === target || source.srcset === target) {
+            video = v;
+            break;
+          }
+        }
+        if (video) break;
+      }
+    }
+
+    // Strategy 5: If still not found and target looks like a video URL,
+    // try to find any visible video on the page (fallback)
+    if (!video) {
+      console.log('[FullPiP] Video URL not matched exactly, falling back to main video');
+    }
   }
+
+  // Final fallback: find main visible video
   if (!video) video = findMainVideo();
 
   if (!video) {
@@ -775,7 +869,20 @@ async function launchVideoPiP(target, options = {}) {
       return;
     }
 
+    // Get current mode setting with detailed logging
+    console.log('[FullPiP] Reading pipMode setting...');
+    const settings = await CachedSettings.get(['pipMode']);
+    const mode = settings.pipMode || 'hybrid';
+
+    console.log('[FullPiP] ════════════════════════════════════════');
+    console.log('[FullPiP] PiP Mode Setting:', mode.toUpperCase());
+    console.log('[FullPiP] Video Element:', video ? video.tagName : 'null');
+    console.log('[FullPiP] Video currentSrc:', video?.currentSrc?.substring(0, 50) || 'null');
+    console.log('[FullPiP] Is Blob URL:', video?.currentSrc?.startsWith('blob:') || false);
+    console.log('[FullPiP] ════════════════════════════════════════');
+
     // Delegate to PiPFactory — it handles routing + tracking
+    console.log('[FullPiP] Calling PiPFactory.create() with mode:', mode);
     const result = await PiPFactory.create({
       videoElement: video,
       width: options.width,
@@ -784,18 +891,19 @@ async function launchVideoPiP(target, options = {}) {
       left,
       top,
       forcePopup: shouldForcePopup,
+      mode: mode, // Pass mode to factory for routing decision
     });
+
+    console.log('[FullPiP] PiPFactory result:', result);
 
     if (result.success) {
       showToast(`Video PiP opened (${result.method})`, 'success', 1500);
     } else {
-      // If factory failed, try bare-metal native as last resort
-      if (!document.pictureInPictureElement) {
-        await video.requestPictureInPicture();
-        showToast('Video PiP activated (fallback)', 'success', 1500);
-      } else {
-        showToast(`PiP failed: ${result.error || 'unknown error'}`, 'error');
-      }
+      // ✅ FIX: Don't fallback to direct requestPictureInPicture
+      // This bypasses PiPFactory tracking and can replace existing PiP
+      // Instead, show the error to user so they know what happened
+      console.error('[FullPiP] PiPFactory failed:', result.error);
+      showToast(`PiP failed: ${result.error || 'unknown error'}`, 'error');
     }
   } catch (e) {
     console.error('[FullPiP] launchVideoPiP error:', e);
@@ -1346,10 +1454,27 @@ let autoPipInitialized = false; // Separate flag for auto-PiP
       const v = document.querySelector('video');
       if (v && v.readyState > 0 && !v.paused) {
         try {
-          await v.requestPictureInPicture();
-          cleanupAutoListeners();
-          showToast('Auto-PiP activated', 'success');
-        } catch (e) { /* Ignore */ }
+          // ✅ FIX: Use PiPFactory instead of direct requestPictureInPicture
+          // This ensures proper routing, deduplication, and multi-window support
+          if (typeof PiPFactory !== 'undefined') {
+            const result = await PiPFactory.create({
+              videoElement: v,
+            });
+            if (result.success) {
+              cleanupAutoListeners();
+              showToast(`Auto-PiP activated (${result.method})`, 'success');
+            } else {
+              console.warn('[FullPiP] Auto-PiP failed:', result.error);
+            }
+          } else {
+            // Fallback if PiPFactory not loaded
+            await v.requestPictureInPicture();
+            cleanupAutoListeners();
+            showToast('Auto-PiP activated', 'success');
+          }
+        } catch (e) {
+          console.debug('[FullPiP] Auto-PiP prevented:', e.message);
+        }
       }
     };
 

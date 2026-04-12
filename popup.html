@@ -29,6 +29,7 @@
         <div class="pip-status-bar" id="pipStatusBar">
             <span class="status-indicator"></span>
             <span class="status-text"><span id="pipCount">0</span> PiP window(s) active</span>
+            <span class="pip-mode-badge" id="pipModeBadge">Hybrid</span>
         </div>
 
         <main>
@@ -64,7 +65,27 @@
                 </summary>
 
                 <div class="settings-content">
-                    <!-- Window Appearance -->
+                    <!-- ─── PiP Mode Selection (Master Control) ─── -->
+                    <h3 class="settings-sub">PiP Mode</h3>
+                    <div class="card pip-mode-card">
+                        <div class="setting-item mb-2">
+                            <div class="meta">
+                                <span class="label">Engine Mode</span>
+                                <span class="desc">Choose how FullPiP creates PiP windows</span>
+                            </div>
+                            <select id="pipMode" class="dropdown pip-mode-select">
+                                <option value="api">PiP API (Native)</option>
+                                <option value="popup">Popup Windows</option>
+                                <option value="hybrid" selected>Hybrid (Smart)</option>
+                            </select>
+                        </div>
+                        <div class="mode-description" id="modeDescription">
+                            <strong>Hybrid Mode:</strong> Tries native PiP API first, falls back to popup windows for multi-PiP. Best of both worlds.
+                        </div>
+                    </div>
+
+                    <!-- Window Appearance (shown for Popup/Hybrid modes) -->
+                    <div id="windowSettingsSection">
                     <h3 class="settings-sub">Window</h3>
                     <div class="card">
                         <div class="setting-item mb-2">
@@ -92,6 +113,7 @@
                         <div class="setting-item">
                             <div class="meta">
                                 <span class="label">Max Windows</span>
+                                <span class="desc">Max simultaneous PiP windows</span>
                             </div>
                             <select id="maxPipWindows" class="dropdown">
                                 <option value="1">1</option>
@@ -102,6 +124,7 @@
                             </select>
                         </div>
                     </div>
+                    </div><!-- End windowSettingsSection -->
 
                     <!-- Interaction -->
                     <h3 class="settings-sub">Interaction</h3>
@@ -186,7 +209,8 @@
                 </summary>
 
                 <div class="settings-content">
-                    <!-- Multi-Monitor -->
+                    <!-- Multi-Monitor (only for Popup/Hybrid modes) -->
+                    <div id="multiMonitorSection">
                     <h3 class="settings-sub">Multi-Monitor</h3>
                     <div class="card multi-monitor-card">
                         <div class="setting-item mb-2">
@@ -217,6 +241,7 @@
                             </button>
                         </div>
                     </div>
+                    </div><!-- End multiMonitorSection -->
 
                     <!-- Media Cache -->
                     <h3 class="settings-sub">Performance</h3>
