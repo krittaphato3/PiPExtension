@@ -393,54 +393,107 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
       sendResponse({ success: true });
       break;
     case "shortcutTrigger":
-      // ✅ FIX: Add toggle logic - close if PiP is open, open if closed
-      // Check for native PiP (both documentPictureInPicture and standard video PiP)
-      const hasDocPip = typeof window !== 'undefined' && window.documentPictureInPicture?.window;
+      // ✅ IMPROVED: Comprehensive PiP state detection and toggle logic
+      // Check all possible PiP states: native video PiP, document PiP, popup PiP
+
+      // Check for standard video PiP (video.requestPictureInPicture)
       const hasVideoPip = typeof document !== 'undefined' && document.pictureInPictureElement;
-      const hasNativePip = hasDocPip || hasVideoPip;
+
+      // Check for document PiP (documentPictureInPicture.requestWindow)
+      const hasDocPip = typeof window !== 'undefined' && window.documentPictureInPicture?.window;
+
+      // Check for any native PiP (standard or document)
+      const hasNativePip = hasVideoPip || hasDocPip;
 
       // Check for popup PiP windows (both local and background-tracked)
       const localPopupCount = State.pipWindows.size;
       let backgroundPopupCount = 0;
+      let pipState = null;
       try {
-        const state = await chrome.runtime.sendMessage({ action: 'getPipState' });
-        backgroundPopupCount = state?.popupCount || 0;
+        pipState = await chrome.runtime.sendMessage({ action: 'getPipState' });
+        backgroundPopupCount = pipState?.popupCount || 0;
       } catch (e) {
-        // Background not available
+        // Background not available, fallback to local only
+        console.debug('[FullPiP] Background unavailable for PiP state check');
       }
       const hasPopupPip = localPopupCount > 0 || backgroundPopupCount > 0;
 
-      console.log('[FullPiP] Alt+P toggle check: native=', hasNativePip, 'localPopups=', localPopupCount, 'bgPopups=', backgroundPopupCount);
+      // Also check if any native PiP is open cross-tab (from state manager)
+      const hasCrossTabNativePip = pipState?.isOpen || false;
 
-      if (hasNativePip || hasPopupPip) {
-        // PiP is open → close it
-        console.log('[FullPiP] Alt+P toggle: PiP detected, closing');
+      const totalPipCount = (hasNativePip ? 1 : 0) + (hasCrossTabNativePip && !hasNativePip ? 1 : 0) + localPopupCount + backgroundPopupCount;
 
-        // Close native PiP
+      console.log('[FullPiP] Alt+P toggle check:', {
+        hasVideoPip,
+        hasDocPip,
+        hasNativePip,
+        hasCrossTabNativePip,
+        localPopupCount,
+        backgroundPopupCount,
+        hasPopupPip,
+        totalPipCount
+      });
+
+      if (totalPipCount > 0) {
+        // PiP is open → close ALL PiP windows
+        console.log('[FullPiP] Alt+P toggle: PiP detected, closing all');
+
+        // Close standard video PiP
         if (hasVideoPip) {
-          document.exitPictureInPicture().catch(() => {});
+          try {
+            await document.exitPictureInPicture();
+            console.log('[FullPiP] Closed standard video PiP');
+          } catch (e) {
+            console.warn('[FullPiP] Failed to exit standard PiP:', e.message);
+          }
         }
+
+        // Close document PiP window
         if (hasDocPip) {
-          window.documentPictureInPicture.window.close();
+          try {
+            window.documentPictureInPicture.window.close();
+            console.log('[FullPiP] Closed document PiP window');
+          } catch (e) {
+            console.warn('[FullPiP] Failed to close document PiP:', e.message);
+          }
         }
 
         // Close local popup PiP windows
         closeAllPipWindows();
 
-        // Also tell background to close popup PiP windows it tracks
-        chrome.runtime.sendMessage({ action: 'closeAllPip' }).catch(() => {});
+        // Close background-tracked popup PiP windows and any cross-tab native PiP
+        try {
+          const closeResult = await chrome.runtime.sendMessage({ action: 'closeAllPip' });
+          console.log('[FullPiP] Background close result:', closeResult);
+        } catch (e) {
+          console.warn('[FullPiP] Failed to close background PiP:', e.message);
+        }
 
-        showToast('PiP closed', 'info', 1500);
-        sendResponse({ success: true, action: 'closed' });
+        showToast(`Closed ${totalPipCount} PiP window${totalPipCount > 1 ? 's' : ''}`, 'success', 1500);
+        sendResponse({ success: true, action: 'closed', count: totalPipCount });
       } else {
         // No PiP → open for main video
+        console.log('[FullPiP] Alt+P toggle: No PiP found, opening new one');
+
         const mainVideo = findMainVideo();
         if (mainVideo) {
-          launchVideoPiP(mainVideo);
-          sendResponse({ success: true, type: 'video', action: 'opened' });
+          try {
+            await launchVideoPiP(mainVideo);
+            sendResponse({ success: true, type: 'video', action: 'opened' });
+          } catch (e) {
+            console.warn('[FullPiP] Failed to open video PiP:', e);
+            showToast('Failed to open video PiP', 'error');
+            sendResponse({ success: false, error: 'Video PiP failed' });
+          }
         } else if (State.lastRightClickTarget) {
-          launchImagePiP();
-          sendResponse({ success: true, type: 'image', action: 'opened' });
+          try {
+            await launchImagePiP();
+            sendResponse({ success: true, type: 'image', action: 'opened' });
+          } catch (e) {
+            console.warn('[FullPiP] Failed to open image PiP:', e);
+            showToast('Failed to open image PiP', 'error');
+            sendResponse({ success: false, error: 'Image PiP failed' });
+          }
         } else {
           showToast('No media found on page', 'error');
           sendResponse({ success: false, error: 'No media' });
@@ -682,8 +735,10 @@ async function launchElementPiP(sourceNode) {
     'pipBackgroundColor',
   ]);
 
-  if (State.pipWindows.size >= (settings.maxPipWindows || CONFIG.MAX_PIP_WINDOWS)) {
-    showToast(`Maximum ${settings.maxPipWindows || CONFIG.MAX_PIP_WINDOWS} PiP windows allowed`, 'error');
+  // Check max windows limit (skip if unlimited)
+  const maxWindows = settings.maxPipWindows === 'unlimited' ? Infinity : (settings.maxPipWindows || CONFIG.MAX_PIP_WINDOWS);
+  if (State.pipWindows.size >= maxWindows) {
+    showToast(`Maximum ${maxWindows === Infinity ? 'unlimited' : maxWindows} PiP windows allowed`, 'error');
     return;
   }
 
@@ -985,9 +1040,11 @@ async function launchImagePiP() {
     'pipZoomSpeed',
     'pipScaleMode'
   ]);
-  
-  if (State.pipWindows.size >= settings.maxPipWindows) {
-    showToast(`Maximum ${settings.maxPipWindows} PiP windows allowed`, 'error');
+
+  // Check max windows limit (skip if unlimited)
+  const maxWindows = settings.maxPipWindows === 'unlimited' ? Infinity : settings.maxPipWindows;
+  if (State.pipWindows.size >= maxWindows) {
+    showToast(`Maximum ${maxWindows === Infinity ? 'unlimited' : maxWindows} PiP windows allowed`, 'error');
     return;
   }
   

@@ -212,20 +212,7 @@ async function dispatchToContent(tabId, action, data, retryCount = 0) {
 // ============================================================================
 // CONTENT SCRIPT COORDINATION
 // ============================================================================
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    // Track content script readiness
-    if (msg.action === "contentScriptReady" && sender.tab?.id) {
-        CONFIG.CONTENT_SCRIPT_READY.add(sender.tab.id);
-        sendResponse({ status: 'acknowledged' });
-    }
-    
-    // Handle tab removal
-    if (msg.action === "tabClosed" && sender.tab?.id) {
-        CONFIG.CONTENT_SCRIPT_READY.delete(sender.tab.id);
-    }
-    
-    return true;
-});
+// Note: Message handling moved to unified listener below
 
 // Clean up when tabs are closed
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -379,9 +366,21 @@ async function handleHybridPipRequest(params) {
 }
 
 // ============================================================================
-// EXTENDED MESSAGE HANDLER - Add hybrid PiP support
+// UNIFIED MESSAGE HANDLER
 // ============================================================================
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    // ── Content script coordination ─────────────────────────────────────────
+    if (msg.action === "contentScriptReady" && sender.tab?.id) {
+        CONFIG.CONTENT_SCRIPT_READY.add(sender.tab.id);
+        sendResponse({ status: 'acknowledged' });
+        return true;
+    }
+
+    if (msg.action === "tabClosed" && sender.tab?.id) {
+        CONFIG.CONTENT_SCRIPT_READY.delete(sender.tab.id);
+        return true;
+    }
+
     // ── New: Direct popup creation from content script ─────────────────────
     // PiPFactory in content script context delegates here because
     // content scripts don't have chrome.windows permission.
@@ -477,8 +476,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 });
 
-// Export for potential use in devtools
-if (typeof globalThis !== 'undefined') {
+// Export for potential use in devtools (only in development)
+if (typeof globalThis !== 'undefined' && chrome.runtime.getManifest().version.includes('dev')) {
     globalThis.dispatchToContent = dispatchToContent;
     globalThis.getDisplays = getDisplays;
     globalThis.PiPFactory = PiPFactory;

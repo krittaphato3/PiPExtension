@@ -43,8 +43,17 @@ const DEFAULTS = {
 const mediaCache = {
     data: null,
     timestamp: 0,
-    tabId: null
+    tabId: null,
+    tabUrl: null
 };
+
+// Cache invalidation helper
+function invalidateMediaCache() {
+    mediaCache.data = null;
+    mediaCache.timestamp = 0;
+    mediaCache.tabId = null;
+    mediaCache.tabUrl = null;
+}
 
 // Settings Cache — reduces chrome.storage.sync calls
 const settingsCache = {
@@ -264,24 +273,33 @@ let saveTimeout;
 let pendingSyncUpdates = {}; // Queue for sync migration
 let isSyncing = false; // Prevent concurrent sync operations
 
-// Optimized save: immediate local save + debounced sync migration
+// Optimized save: immediate local save + async sync migration
 function saveSetting(key, value, showFeedback = false) {
     clearTimeout(saveTimeout);
 
     // 1. Save immediately to chrome.storage.local (instant UI responsiveness)
-    chrome.storage.local.set({ [key]: value });
+    chrome.storage.local.set({ [key]: value }, () => {
+        if (chrome.runtime.lastError) {
+            console.warn('[FullPiP] Failed to save to local storage:', chrome.runtime.lastError.message);
+            showToast('Failed to save setting locally', 'error');
+            return;
+        }
 
-    // 2. Queue for sync migration
-    pendingSyncUpdates[key] = value;
+        // Update cache immediately after successful local save
+        settingsCache.data = { ...settingsCache.data, [key]: value };
+        settingsCache.timestamp = Date.now();
 
-    // 3. Debounce sync migration (2000ms after interaction stops)
-    saveTimeout = setTimeout(() => {
-        flushSyncQueue(showFeedback);
-    }, 2000);
+        // 2. Queue for sync migration (with error handling)
+        pendingSyncUpdates[key] = value;
 
-    // Update cache immediately
-    settingsCache.data = { ...settingsCache.data, [key]: value };
-    settingsCache.timestamp = Date.now();
+        // 3. Debounce sync migration (500ms after interaction stops for better UX)
+        saveTimeout = setTimeout(() => {
+            flushSyncQueue(showFeedback).catch(err => {
+                console.warn('[FullPiP] Sync migration failed:', err.message);
+                // Don't show error toast for sync failures to avoid spam
+            });
+        }, 500); // Reduced from 2000ms to 500ms for better perceived responsiveness
+    });
 }
 
 // ✅ FIX: Flush sync queue with proper locking to prevent race conditions
@@ -554,15 +572,19 @@ async function refreshMediaList(forceRefresh = false) {
     if (!forceRefresh && useCache && mediaCache.data && mediaCache.tabId) {
         const age = Date.now() - mediaCache.timestamp;
         if (age < cacheDuration) {
-            // Validate cache by checking if tab is still valid
+            // Validate cache by checking if tab is still valid and URL hasn't changed
             try {
                 const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-                if (currentTab?.id === mediaCache.tabId) {
+                if (currentTab?.id === mediaCache.tabId && currentTab?.url === mediaCache.tabUrl) {
                     renderMediaList(mediaCache.data, container, mediaCache.tabId);
                     return;
+                } else {
+                    // Tab changed or URL changed, invalidate cache
+                    invalidateMediaCache();
                 }
             } catch (e) {
                 // Tab no longer exists, invalidate cache
+                invalidateMediaCache();
             }
         }
     }
@@ -604,6 +626,7 @@ async function refreshMediaList(forceRefresh = false) {
             mediaCache.data = allMedia;
             mediaCache.timestamp = Date.now();
             mediaCache.tabId = tabId;
+            mediaCache.tabUrl = tabs[0]?.url;
             
             renderMediaList(allMedia, container, tabId);
             
@@ -724,18 +747,27 @@ function renderMediaList(mediaItems, container, tabId) {
         if (pipBtn) {
             pipBtn.onclick = async () => {
                 const settings = await loadSettings();
+
+                // Use the same toggle logic as Alt+P by sending a shortcutTrigger message to content script
+                // This ensures consistent behavior and proper state detection
                 const result = await sendTabMessageSafe(tabId, {
-                    action: "controlMedia",
-                    id: media.pipId,
-                    command: "pip"
+                    action: "shortcutTrigger"
                 }, { frameId: media.frameId });
-                
+
                 if (result?.success) {
                     if (settings[KEYS.SHOW_NOTIFICATIONS]) {
-                        showToast('Opening PiP', 'success', 1000);
+                        if (result.action === 'closed') {
+                            showToast(`Closed ${result.count} PiP window${result.count > 1 ? 's' : ''}`, 'success', 1500);
+                        } else if (result.action === 'opened') {
+                            showToast(result.type === 'video' ? 'Opening PiP' : 'Opening image PiP', 'success', 1000);
+                        }
                     }
                 } else {
-                    showToast('Failed to open PiP', 'error', 1500);
+                    if (result?.error === 'No media') {
+                        showToast('No media found on page', 'error');
+                    } else {
+                        showToast('PiP toggle failed', 'error');
+                    }
                 }
             };
         }
@@ -939,25 +971,33 @@ async function updatePipCount() {
     // Periodic PiP count update
     setInterval(updatePipCount, 2000);
 
-    // Listen for live sync updates (with cleanup on popup close)
+    // Listen for live sync updates and tab navigation (with cleanup on popup close)
     const messageListener = (msg) => {
         if (msg.action === 'liveSyncUpdate') {
             // Refresh media list to show updated thumbnail
             if (mediaCache.data) {
-                const updated = mediaCache.data.find(m => m.pipId === msg.pipId);
-                if (updated) {
-                    refreshMediaList(true);
-                }
+                refreshMediaList(true);
             }
         }
         return true;
     };
-    
+
     chrome.runtime.onMessage.addListener(messageListener);
-    
-    // Cleanup listener when popup closes
+
+    // Listen for tab updates to invalidate cache on navigation
+    const tabUpdateListener = (tabId, changeInfo, tab) => {
+        if (changeInfo.status === 'loading' && mediaCache.tabId === tabId) {
+            // Tab is navigating, invalidate cache
+            invalidateMediaCache();
+        }
+    };
+
+    chrome.tabs.onUpdated.addListener(tabUpdateListener);
+
+    // Cleanup listeners when popup closes
     window.addEventListener('unload', () => {
         chrome.runtime.onMessage.removeListener(messageListener);
+        chrome.tabs.onUpdated.removeListener(tabUpdateListener);
     });
     
     // Export debug info (accessible via console)
