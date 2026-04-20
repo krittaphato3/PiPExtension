@@ -118,8 +118,8 @@ h1 {
     font-weight: 600;
 }
 
-.badge.beta {
-    background: linear-gradient(135deg, #f59e0b, #d97706);
+.badge.alpha {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
 }
 
 .header-actions {
