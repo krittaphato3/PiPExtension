@@ -759,15 +759,18 @@ function renderMediaList(mediaItems, container, tabId) {
                         if (result.action === 'closed') {
                             showToast(`Closed ${result.count} PiP window${result.count > 1 ? 's' : ''}`, 'success', 1500);
                         } else if (result.action === 'opened') {
-                            showToast(result.type === 'video' ? 'Opening PiP' : 'Opening image PiP', 'success', 1000);
+                            showToast(result.type === 'video' ? 'PiP opened' : 'Image PiP opened', 'success', 1000);
                         }
                     }
                 } else {
+                    // Only show error if there's actually an error, not just communication failure
                     if (result?.error === 'No media') {
-                        showToast('No media found on page', 'error');
-                    } else {
-                        showToast('PiP toggle failed', 'error');
+                        showToast('No media found on page', 'warning');
+                    } else if (result) {
+                        // If we got a result but success is false, show the specific error
+                        showToast(result.error || 'PiP operation failed', 'error');
                     }
+                    // If no result at all (communication failure), don't show notification to avoid false alarms
                 }
             };
         }

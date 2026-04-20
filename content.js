@@ -959,10 +959,38 @@ async function launchVideoPiP(target, options = {}) {
   const { screenId, left, top, forcePopup } = options;
 
   // ── Determine if we should force popup ─────────────────────────────────
-  // Force popup when: explicit flag, multi-monitor options, or a native
-  // video PiP is already active (document.pictureInPictureElement).
-  // PiPFactory also checks its own cross-tab state internally.
-  const shouldForcePopup = !!(screenId || left || top || forcePopup || document.pictureInPictureElement);
+  // Force popup when: explicit flag, multi-monitor options, or any native PiP is already active
+  let shouldForcePopup = !!(screenId || left || top || forcePopup);
+
+  // In Hybrid mode, check if any native PiP is already open and force popup if so
+  if (mode === 'hybrid') {
+    // Check for standard video PiP
+    const hasVideoPip = document.pictureInPictureElement;
+
+    // Check for document PiP
+    const hasDocPip = window.documentPictureInPicture?.window;
+
+    // Check for cross-tab native PiP (via NativePipStateManager)
+    let hasCrossTabPip = false;
+    try {
+      // We need to check the cross-tab state here since PiPFactory runs in service worker context
+      const state = await chrome.runtime.sendMessage({ action: 'getPipState' });
+      hasCrossTabPip = state?.isOpen || false;
+    } catch (e) {
+      console.debug('[FullPiP] Could not check cross-tab PiP state:', e.message);
+    }
+
+    if (hasVideoPip || hasDocPip || hasCrossTabPip) {
+      console.log('[FullPiP] Hybrid mode: native PiP detected, forcing popup');
+      console.log('[FullPiP]   hasVideoPip:', hasVideoPip);
+      console.log('[FullPiP]   hasDocPip:', hasDocPip);
+      console.log('[FullPiP]   hasCrossTabPip:', hasCrossTabPip);
+      shouldForcePopup = true;
+    }
+  } else {
+    // For API and Popup modes, still check local document state
+    shouldForcePopup = shouldForcePopup || document.pictureInPictureElement;
+  }
 
   try {
     if (typeof PiPFactory === 'undefined') {
