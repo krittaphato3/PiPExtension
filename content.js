@@ -958,6 +958,11 @@ async function launchVideoPiP(target, options = {}) {
 
   const { screenId, left, top, forcePopup } = options;
 
+  // ── Get current mode setting early ────────────────────────────────────
+  // Need this for the force popup logic below
+  const settings = await CachedSettings.get(['pipMode']);
+  const mode = settings.pipMode || 'hybrid';
+
   // ── Determine if we should force popup ─────────────────────────────────
   // Force popup when: explicit flag, multi-monitor options, or any native PiP is already active
   let shouldForcePopup = !!(screenId || left || top || forcePopup);
@@ -1000,10 +1005,7 @@ async function launchVideoPiP(target, options = {}) {
       return;
     }
 
-    // Get current mode setting with detailed logging
-    console.log('[FullPiP] Reading pipMode setting...');
-    const settings = await CachedSettings.get(['pipMode']);
-    const mode = settings.pipMode || 'hybrid';
+    // Mode already read above for force popup logic
 
     console.log('[FullPiP] ════════════════════════════════════════');
     console.log('[FullPiP] PiP Mode Setting:', mode.toUpperCase());
