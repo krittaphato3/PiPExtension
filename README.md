@@ -157,7 +157,7 @@ Choose from three operational modes in the extension settings:
 │   PiP Factory   │◀──▶│   State Manager  │◀──▶│   Storage API   │
 │                 │    │                  │    │                 │
 │ • Mode routing  │    │ • Cross-tab sync │    │ • Local/Sync    │
-│ • Window creation│    │ • Native PiP    │    │ • Cache mgmt    │
+│ • Window create │    │ • Native PiP     │    │ • Cache mgmt    │
 │ • Error handling│    │ • Popup tracking │    │ • Settings      │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
