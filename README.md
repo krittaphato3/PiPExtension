@@ -1,4 +1,4 @@
-# FullPiP
+# FullPiP Full Version
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Available-blue?style=flat-square)](https://chrome.google.com/webstore)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
