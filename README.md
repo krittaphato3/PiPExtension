@@ -1,4 +1,5 @@
-# FullPiP (Alpha)
+
+# FullPiP Full Version
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Available-blue?style=flat-square)](https://chrome.google.com/webstore)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
@@ -157,7 +158,7 @@ Choose from three operational modes in the extension settings:
 │   PiP Factory   │◀──▶│   State Manager  │◀──▶│   Storage API   │
 │                 │    │                  │    │                 │
 │ • Mode routing  │    │ • Cross-tab sync │    │ • Local/Sync    │
-│ • Window creation│    │ • Native PiP    │    │ • Cache mgmt    │
+│ • Window create │    │ • Native PiP     │    │ • Cache mgmt    │
 │ • Error handling│    │ • Popup tracking │    │ • Settings      │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
