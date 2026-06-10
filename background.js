@@ -474,6 +474,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         });
         return true;
     }
+
+    // Clear cross-tab native PiP state (called from content script)
+    if (msg.action === 'clearNativePipState') {
+        NativePipStateManager.clearState().then(() => {
+            sendResponse({ success: true });
+        }).catch((err) => {
+            sendResponse({ success: false, error: err?.message || 'Failed to clear state' });
+        });
+        return true;
+    }
 });
 
 // Export for potential use in devtools (only in development)

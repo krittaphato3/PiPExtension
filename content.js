@@ -76,6 +76,9 @@ const State = {
   lastErrorTime: 0
 };
 
+// Service worker port for keepalive (must be declared before use due to TDZ)
+let serviceWorkerPort = null;
+
 // Optimized settings cache — reads from BOTH local and sync storage,
 // with local taking precedence (popup saves to local instantly for speed).
 const CachedSettings = {
@@ -273,9 +276,8 @@ function showToast(message, type = 'info', duration = CONFIG.TOAST_DURATION_MS) 
   if (type === 'info' && now - lastToastTime < TOAST_THROTTLE_MS) {
     return;
   }
-  if (type !== 'info') {
-    lastToastTime = now;
-  }
+  // Update lastToastTime for ALL toast types to properly throttle subsequent toasts
+  lastToastTime = now;
 
   const container = ensureToastContainer();
 
@@ -1250,11 +1252,9 @@ function closeAllPipWindows() {
   if (State.observer) State.observer.disconnect();
   State.observer = null;
 
-  // Clear cross-tab native PiP state to prevent stale state
-  // that would cause future PiP attempts to use popup mode unnecessarily
-  if (typeof NativePipStateManager !== 'undefined') {
-    NativePipStateManager.clearState();
-  }
+  // Clear cross-tab native PiP state via background script
+  // (NativePipStateManager is not available in content script due to load order)
+  sendSafeMessage({ action: 'clearNativePipState' }, 'Clear native PiP state');
 
   // Disconnect service worker port
   if (serviceWorkerPort) {
@@ -1822,7 +1822,6 @@ if (typeof PiPFactory !== 'undefined' && typeof showToast === 'function') {
 }
 
 // Establish persistent connection to keep service worker alive
-let serviceWorkerPort = null;
 function establishServiceWorkerConnection() {
   // Only connect when PiP windows are active
   if (State.pipWindows.size > 0 && !serviceWorkerPort) {

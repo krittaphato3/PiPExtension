@@ -243,12 +243,17 @@ function showToast(message, type = 'info', duration = 2500) {
 
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-        <span class="toast-message">${message}</span>
-        <button class="toast-close">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
-    `;
+
+    const messageSpan = document.createElement('span');
+    messageSpan.className = 'toast-message';
+    messageSpan.textContent = message;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+
+    toast.appendChild(messageSpan);
+    toast.appendChild(closeBtn);
 
     container.appendChild(toast);
 
@@ -259,7 +264,7 @@ function showToast(message, type = 'info', duration = 2500) {
     }, duration);
 
     // Manual close
-    toast.querySelector('.toast-close').addEventListener('click', () => {
+    closeBtn.addEventListener('click', () => {
         clearTimeout(timeout);
         toast.classList.add('toast-exit');
         setTimeout(() => toast.remove(), 300);
@@ -668,40 +673,76 @@ function renderMediaList(mediaItems, container, tabId) {
         
         let visual = '';
         const thumbClass = media.isPortrait ? 'media-thumb portrait' : 'media-thumb';
-        
+
+        // Create thumbnail element
+        const thumbEl = document.createElement('div');
+        thumbEl.className = thumbClass;
         if (media.thumbnail) {
-            visual = `<div class="${thumbClass}" style="background-image: url('${media.thumbnail}')"></div>`;
+            thumbEl.style.backgroundImage = `url('${media.thumbnail}')`;
         } else {
+            thumbEl.style.background = 'var(--input-bg)';
+            thumbEl.style.display = 'flex';
+            thumbEl.style.justifyContent = 'center';
+            thumbEl.style.alignItems = 'center';
             const iconSvg = media.type === 'video'
                 ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><polygon points="10 8 16 11 10 14 10 8" fill="currentColor" stroke="none"/></svg>'
                 : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>';
-            visual = `<div class="${thumbClass}" style="background: var(--input-bg); display:flex; justify-content:center; align-items:center;">${iconSvg}</div>`;
+            thumbEl.innerHTML = iconSvg;
         }
-        
+
         const playIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
         const pauseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
         const pipIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>';
-        
+
         const time = formatTime(media.currentTime) + (media.duration ? ' / ' + formatTime(media.duration) : '');
         const titleText = media.pageTitle === 'FullPiP Control Center' ? 'Unknown Video' : media.pageTitle;
-        const subText = media.isIframe ? `<span class="iframe-badge">Embedded Frame</span> • ${time}` : time;
-        
-        div.innerHTML = `
-            ${visual}
-            <div class="media-info">
-                <div class="media-title">${titleText}</div>
-                <div class="media-meta">${subText}</div>
-            </div>
-            <div class="media-controls">
-                <button class="btn-icon play-btn" title="${media.paused ? 'Play' : 'Pause'}">
-                    ${media.paused ? playIcon : pauseIcon}
-                </button>
-                ${media.type === 'video' ? `<button class="btn-icon pip-btn" title="Picture-in-Picture">${pipIcon}</button>` : ''}
-            </div>
-        `;
-        
-        const playBtn = div.querySelector('.play-btn');
-        const pipBtn = div.querySelector('.pip-btn');
+
+        // Create media info
+        const mediaInfo = document.createElement('div');
+        mediaInfo.className = 'media-info';
+
+        const mediaTitle = document.createElement('div');
+        mediaTitle.className = 'media-title';
+        mediaTitle.textContent = titleText;
+
+        const mediaMeta = document.createElement('div');
+        mediaMeta.className = 'media-meta';
+        if (media.isIframe) {
+            const iframeBadge = document.createElement('span');
+            iframeBadge.className = 'iframe-badge';
+            iframeBadge.textContent = 'Embedded Frame';
+            mediaMeta.appendChild(iframeBadge);
+            mediaMeta.appendChild(document.createTextNode(` • ${time}`));
+        } else {
+            mediaMeta.textContent = time;
+        }
+
+        mediaInfo.appendChild(mediaTitle);
+        mediaInfo.appendChild(mediaMeta);
+
+        // Create media controls
+        const mediaControls = document.createElement('div');
+        mediaControls.className = 'media-controls';
+
+        const playBtn = document.createElement('button');
+        playBtn.className = 'btn-icon play-btn';
+        playBtn.title = media.paused ? 'Play' : 'Pause';
+        playBtn.innerHTML = media.paused ? playIcon : pauseIcon;
+
+        mediaControls.appendChild(playBtn);
+
+        let pipBtn = null;
+        if (media.type === 'video') {
+            pipBtn = document.createElement('button');
+            pipBtn.className = 'btn-icon pip-btn';
+            pipBtn.title = 'Picture-in-Picture';
+            pipBtn.innerHTML = pipIcon;
+            mediaControls.appendChild(pipBtn);
+        }
+
+        div.appendChild(thumbEl);
+        div.appendChild(mediaInfo);
+        div.appendChild(mediaControls);
         
         // Hover highlight (with error handling)
         div.addEventListener('mouseenter', async () => {
@@ -723,6 +764,9 @@ function renderMediaList(mediaItems, container, tabId) {
             }, { frameId: media.frameId });
         });
         
+        // Track paused state on the button element
+        playBtn.dataset.paused = media.paused.toString();
+        
         playBtn.onclick = async () => {
             const settings = await loadSettings();
             const result = await sendTabMessageSafe(tabId, {
@@ -732,7 +776,9 @@ function renderMediaList(mediaItems, container, tabId) {
             }, { frameId: media.frameId });
             
             if (result?.success) {
-                const isPaused = playBtn.innerHTML.includes('rect');
+                // Toggle paused state
+                const isPaused = playBtn.dataset.paused === 'true';
+                playBtn.dataset.paused = (!isPaused).toString();
                 playBtn.innerHTML = isPaused ? playIcon : pauseIcon;
                 playBtn.title = isPaused ? 'Pause' : 'Play';
                 
