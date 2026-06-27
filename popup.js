@@ -998,18 +998,23 @@ async function updatePipCount() {
         }
     });
 
-    // Export settings
-    document.getElementById('exportSettingsBtn').addEventListener('click', exportSettings);
-    
-    // Import settings
-    document.getElementById('importSettingsInput').addEventListener('change', (e) => {
-        if (e.target.files?.[0]) {
-            importSettings(e.target.files[0]);
-        }
-    });
-    
-    // Reset all settings
-    document.getElementById('resetAllSettingsBtn').addEventListener('click', resetAllSettings);
+    // Export settings (guarded)
+    const exportBtn = document.getElementById('exportSettingsBtn');
+    if (exportBtn) exportBtn.addEventListener('click', exportSettings);
+
+    // Import settings (guarded)
+    const importInput = document.getElementById('importSettingsInput');
+    if (importInput) {
+        importInput.addEventListener('change', (e) => {
+            if (e.target.files?.[0]) {
+                importSettings(e.target.files[0]);
+            }
+        });
+    }
+
+    // Reset all settings (guarded)
+    const resetBtn = document.getElementById('resetAllSettingsBtn');
+    if (resetBtn) resetBtn.addEventListener('click', resetAllSettings);
     
     // Initial media scan
     refreshMediaList();

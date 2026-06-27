@@ -422,7 +422,7 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
 
       const totalPipCount = (hasNativePip ? 1 : 0) + (hasCrossTabNativePip && !hasNativePip ? 1 : 0) + localPopupCount + backgroundPopupCount;
 
-      console.log('[FullPiP] Alt+P toggle check:', {
+      console.debug('[FullPiP] Alt+P toggle check:', {
         hasVideoPip,
         hasDocPip,
         hasNativePip,
@@ -435,13 +435,13 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
 
       if (totalPipCount > 0) {
         // PiP is open → close ALL PiP windows
-        console.log('[FullPiP] Alt+P toggle: PiP detected, closing all');
+        console.debug('[FullPiP] Alt+P toggle: PiP detected, closing all');
 
         // Close standard video PiP
         if (hasVideoPip) {
           try {
             await document.exitPictureInPicture();
-            console.log('[FullPiP] Closed standard video PiP');
+            console.debug('[FullPiP] Closed standard video PiP');
           } catch (e) {
             console.warn('[FullPiP] Failed to exit standard PiP:', e.message);
           }
@@ -451,7 +451,7 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
         if (hasDocPip) {
           try {
             window.documentPictureInPicture.window.close();
-            console.log('[FullPiP] Closed document PiP window');
+            console.debug('[FullPiP] Closed document PiP window');
           } catch (e) {
             console.warn('[FullPiP] Failed to close document PiP:', e.message);
           }
@@ -463,7 +463,7 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
         // Close background-tracked popup PiP windows and any cross-tab native PiP
         try {
           const closeResult = await chrome.runtime.sendMessage({ action: 'closeAllPip' });
-          console.log('[FullPiP] Background close result:', closeResult);
+          console.debug('[FullPiP] Background close result:', closeResult);
         } catch (e) {
           console.warn('[FullPiP] Failed to close background PiP:', e.message);
         }
@@ -472,7 +472,7 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
         sendResponse({ success: true, action: 'closed', count: totalPipCount });
       } else {
         // No PiP → open for main video
-        console.log('[FullPiP] Alt+P toggle: No PiP found, opening new one');
+        console.debug('[FullPiP] Alt+P toggle: No PiP found, opening new one');
 
         const mainVideo = findMainVideo();
         if (mainVideo) {
@@ -564,7 +564,7 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
 
     // ✅ FIX: Handle popup window closed notification from service worker
     case "popupWindowClosed":
-      console.log('[FullPiP] Popup window closed notification:', req.windowId);
+      console.debug('[FullPiP] Popup window closed notification:', req.windowId);
       // Clean up local dedup tracking
       if (req.sourceId && typeof PiPFactory !== 'undefined') {
         PiPFactory._unregisterSource(req.sourceId);
@@ -577,7 +577,7 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
       const videoToPause = findMainVideo();
       if (videoToPause && !videoToPause.paused) {
         videoToPause.pause();
-        console.log('[FullPiP] Paused source video for popup');
+        console.debug('[FullPiP] Paused source video for popup');
       }
       sendResponse({ success: true });
       break;
@@ -703,7 +703,7 @@ function handlePickerClick(e) {
   // ✅ FIX: Detect if clicked element is a video and use appropriate handler
   if (target.tagName === 'VIDEO' || target.tagName === 'AUDIO') {
     // Video elements should use launchVideoPiP for proper playback
-    console.log('[FullPiP] Picker clicked on', target.tagName.toLowerCase(), '→ using video PiP');
+    console.debug('[FullPiP] Picker clicked on', target.tagName.toLowerCase(), '→ using video PiP');
     launchVideoPiP(target);
   } else {
     // Images and other elements use Document PiP
@@ -780,27 +780,7 @@ async function launchElementPiP(sourceNode) {
       img, video, canvas, svg, iframe, div {
         ${contentCSS}
       }
-      .fullpip-close-btn {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        background: rgba(0,0,0,0.6);
-        border: none;
-        color: white;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        opacity: 0;
-        transition: opacity 0.2s, background 0.2s;
-        z-index: 1000;
-      }
-      body:hover .fullpip-close-btn { opacity: 1; }
-      .fullpip-close-btn:hover { background: rgba(255,0,0,0.8); }
-      .fullpip-close-btn svg { width: 14px; height: 14px; }
+      ${getCloseButtonCSS()}
     `;
     doc.head.append(baseStyle);
 
@@ -938,7 +918,7 @@ async function launchVideoPiP(target, options = {}) {
     // Strategy 5: If still not found and target looks like a video URL,
     // try to find any visible video on the page (fallback)
     if (!video) {
-      console.log('[FullPiP] Video URL not matched exactly, falling back to main video');
+      console.debug('[FullPiP] Video URL not matched exactly, falling back to main video');
     }
   }
 
@@ -985,10 +965,10 @@ async function launchVideoPiP(target, options = {}) {
     }
 
     if (hasVideoPip || hasDocPip || hasCrossTabPip) {
-      console.log('[FullPiP] Hybrid mode: native PiP detected, forcing popup');
-      console.log('[FullPiP]   hasVideoPip:', hasVideoPip);
-      console.log('[FullPiP]   hasDocPip:', hasDocPip);
-      console.log('[FullPiP]   hasCrossTabPip:', hasCrossTabPip);
+      console.debug('[FullPiP] Hybrid mode: native PiP detected, forcing popup');
+      console.debug('[FullPiP]   hasVideoPip:', hasVideoPip);
+      console.debug('[FullPiP]   hasDocPip:', hasDocPip);
+      console.debug('[FullPiP]   hasCrossTabPip:', hasCrossTabPip);
       shouldForcePopup = true;
     }
   } else {
@@ -1006,15 +986,15 @@ async function launchVideoPiP(target, options = {}) {
 
     // Mode already read above for force popup logic
 
-    console.log('[FullPiP] ════════════════════════════════════════');
-    console.log('[FullPiP] PiP Mode Setting:', mode.toUpperCase());
-    console.log('[FullPiP] Video Element:', video ? video.tagName : 'null');
-    console.log('[FullPiP] Video currentSrc:', video?.currentSrc?.substring(0, 50) || 'null');
-    console.log('[FullPiP] Is Blob URL:', video?.currentSrc?.startsWith('blob:') || false);
-    console.log('[FullPiP] ════════════════════════════════════════');
+    console.debug('[FullPiP] ════════════════════════════════════════');
+    console.debug('[FullPiP] PiP Mode Setting:', mode.toUpperCase());
+    console.debug('[FullPiP] Video Element:', video ? video.tagName : 'null');
+    console.debug('[FullPiP] Video currentSrc:', video?.currentSrc?.substring(0, 50) || 'null');
+    console.debug('[FullPiP] Is Blob URL:', video?.currentSrc?.startsWith('blob:') || false);
+    console.debug('[FullPiP] ════════════════════════════════════════');
 
     // Delegate to PiPFactory — it handles routing + tracking
-    console.log('[FullPiP] Calling PiPFactory.create() with mode:', mode);
+    console.debug('[FullPiP] Calling PiPFactory.create() with mode:', mode);
     const result = await PiPFactory.create({
       videoElement: video,
       width: options.width,
@@ -1026,7 +1006,7 @@ async function launchVideoPiP(target, options = {}) {
       mode: mode, // Pass mode to factory for routing decision
     });
 
-    console.log('[FullPiP] PiPFactory result:', result);
+    console.debug('[FullPiP] PiPFactory result:', result);
 
     if (result.success) {
       showToast(`Video PiP opened (${result.method})`, 'success', 1500);
@@ -1267,6 +1247,34 @@ function closeAllPipWindows() {
 // ============================================================================
 // STYLING UTILITIES
 // ============================================================================
+
+/** Shared CSS for PiP window close button (used in both element and image PiP) */
+function getCloseButtonCSS() {
+  return `
+    .fullpip-close-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.6);
+      border: none;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.2s, background 0.2s;
+      z-index: 1000;
+    }
+    body:hover .fullpip-close-btn { opacity: 1; }
+    .fullpip-close-btn:hover { background: rgba(255,0,0,0.8); }
+    .fullpip-close-btn svg { width: 14px; height: 14px; }
+  `;
+}
+
 function updateBackgroundStyle(bodyElement, bgSetting) {
   let bgColor = '#000';
   let bgImage = 'none';
@@ -1330,27 +1338,7 @@ function setupPipStyles(doc, sourceNode, bgSetting, scaleMode) {
       will-change: transform;
       ${contentCSS}
     }
-    .fullpip-close-btn {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-      background: rgba(0,0,0,0.6);
-      border: none;
-      color: white;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      transition: opacity 0.2s, background 0.2s;
-      z-index: 1000;
-    }
-    body:hover .fullpip-close-btn { opacity: 1; }
-    .fullpip-close-btn:hover { background: rgba(255,0,0,0.8); }
-    .fullpip-close-btn svg { width: 14px; height: 14px; }
+    ${getCloseButtonCSS()}
   `;
   doc.head.append(style);
   updateBackgroundStyle(doc.body, bgSetting);
