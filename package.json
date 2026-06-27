@@ -1,0 +1,32 @@
+{
+  "name": "fullpip-extension",
+  "version": "1.0.0",
+  "description": "Smart multi-window Picture-in-Picture Chrome extension with hybrid native/popup routing",
+  "author": "krittaphato3",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "node tests/test-pipFactory.js",
+    "test:all": "node tests/test-pipFactory.js && node tests/test-content-utils.js && node tests/test-player.js && node tests/test-popup-utils.js"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.0",
+    "eslint-config-prettier": "^9.1.0"
+  },
+  "keywords": [
+    "chrome-extension",
+    "picture-in-picture",
+    "pip",
+    "video",
+    "multi-window"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/krittaphato3/PiPExtension.git"
+  }
+}
