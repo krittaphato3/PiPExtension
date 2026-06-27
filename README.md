@@ -3,7 +3,7 @@
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Available-blue?style=flat-square)](https://chrome.google.com/webstore)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
-[![Version](https://img.shields.io/badge/Version-1.0.0--Alpha-orange?style=flat-square)](https://github.com/krittaphato3/PiPExtension/releases)
+[![Version](https://img.shields.io/badge/Version-1.0.0-orange?style=flat-square)](https://github.com/krittaphato3/PiPExtension/releases)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)](LICENSE)
 
 FullPiP is a comprehensive Chrome extension that provides advanced Picture-in-Picture (PiP) functionality with intelligent routing, multi-window support, and seamless media control across different video sources.
@@ -189,28 +189,46 @@ FullPiP requires the following Chrome permissions:
 git clone https://github.com/krittaphato3/PiPExtension.git
 cd PiPExtension
 
-# Install dependencies (if any)
+# Install dependencies
 npm install
-
-# Run tests
-npm test
 ```
 
 ### Building
 
 The extension is built using standard web technologies. No build process is required for development. Load the extension directory directly in Chrome's developer mode.
 
+### Development Commands
+
+```bash
+# Run linting
+npm run lint
+
+# Fix lint issues automatically
+npm run lint:fix
+
+# Format code with Prettier
+npm run format
+
+# Run PiPFactory unit tests
+npm test
+
+# Run ALL tests (PiPFactory + content utils + player + popup utils)
+npm run test:all
+```
+
 ### Testing
 
 ```bash
-# Run unit tests
-node tests/test-pipFactory.js
+# Run all unit tests
+npm run test:all
 
 # Manual testing
 # 1. Load extension in Chrome developer mode
 # 2. Test on various video sites (YouTube, Vimeo, etc.)
-# 3. Verify all PiP modes work correctly
-# 4. Test keyboard shortcuts and context menus
+# 3. Verify all PiP modes work correctly (API, Popup, Hybrid)
+# 4. Test keyboard shortcuts (Alt+P, Alt+K, Alt+Shift+P)
+# 5. Test right-click context menu on videos and images
+# 6. Test settings export/import and theme toggle
 ```
 
 ## Contributing

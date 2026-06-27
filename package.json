@@ -11,7 +11,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "node tests/test-pipFactory.js",
-    "test:all": "node tests/test-pipFactory.js && node tests/test-content-utils.js && node tests/test-player.js && node tests/test-popup-utils.js"
+    "test:all": "node tests/test-pipFactory.js && node tests/test-content-utils.js && node tests/test-player.js && node tests/test-popup-utils.js",
+    "test:utils": "node tests/test-content-utils.js && node tests/test-player.js && node tests/test-popup-utils.js"
   },
   "devDependencies": {
     "eslint": "^8.56.0",
