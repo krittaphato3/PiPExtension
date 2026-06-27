@@ -3,7 +3,7 @@
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Available-blue?style=flat-square)](https://chrome.google.com/webstore)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
-[![Version](https://img.shields.io/badge/Version-1.0.0-orange?style=flat-square)](https://github.com/krittaphato3/PiPExtension/releases)
+[![Version](https://img.shields.io/badge/Version-1.1.0-orange?style=flat-square)](https://github.com/krittaphato3/PiPExtension/releases)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)](LICENSE)
 
 FullPiP is a comprehensive Chrome extension that provides advanced Picture-in-Picture (PiP) functionality with intelligent routing, multi-window support, and seamless media control across different video sources.

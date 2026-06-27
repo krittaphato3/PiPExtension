@@ -1,6 +1,6 @@
 {
   "name": "fullpip-extension",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Smart multi-window Picture-in-Picture Chrome extension with hybrid native/popup routing",
   "author": "krittaphato3",
   "license": "MIT",
