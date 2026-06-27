@@ -26,16 +26,11 @@ const CONFIG = {
   
   // Performance
   DEBOUNCE_SYNC_MS: 50,    // Live sync debounce delay
-  MEDIA_SCAN_TIMEOUT: 5000,// Timeout for media scanning
   HIGHLIGHT_DURATION_MS: 2000, // How long highlight stays after hover
   
   // Picker mode
   PICKER_HIGHLIGHT_CLASS: 'fullpip-picker-highlight',
   PICKER_STYLE_ID: 'fullpip-picker-style',
-  
-  // PiP indicator
-  INDICATOR_CLASS: 'fullpip-indicator',
-  INDICATOR_FADE_DELAY_MS: 3000,
   
   // Multi-PiP limits
   MAX_PIP_WINDOWS: 3,
@@ -276,8 +271,10 @@ function showToast(message, type = 'info', duration = CONFIG.TOAST_DURATION_MS) 
   if (type === 'info' && now - lastToastTime < TOAST_THROTTLE_MS) {
     return;
   }
-  // Update lastToastTime for ALL toast types to properly throttle subsequent toasts
-  lastToastTime = now;
+  // Only throttle info toasts — error/success/warning should always show
+  if (type === 'info') {
+    lastToastTime = now;
+  }
 
   const container = ensureToastContainer();
 
@@ -1579,6 +1576,9 @@ let autoPipInitialized = false; // Separate flag for auto-PiP
   // Prevent duplicate initialization
   if (autoPipInitialized) return;
 
+  const MAX_AUTO_PIP_ATTEMPTS = 3;
+  let autoPipAttemptCount = 0;
+
   CachedSettings.get(['autoPipEnabled']).then(({ autoPipEnabled }) => {
     if (!autoPipEnabled) {
       autoPipInitialized = true;
@@ -1586,8 +1586,15 @@ let autoPipInitialized = false; // Separate flag for auto-PiP
     }
 
     const attemptPip = async () => {
+      // Stop retrying after max attempts to avoid listener leak
+      if (autoPipAttemptCount >= MAX_AUTO_PIP_ATTEMPTS) {
+        cleanupAutoListeners();
+        return;
+      }
+
       const v = document.querySelector('video');
       if (v && v.readyState > 0 && !v.paused) {
+        autoPipAttemptCount++;
         try {
           // ✅ FIX: Use PiPFactory instead of direct requestPictureInPicture
           // This ensures proper routing, deduplication, and multi-window support
@@ -1631,155 +1638,6 @@ let autoPipInitialized = false; // Separate flag for auto-PiP
     autoPipInitialized = true;
   });
 })();
-
-// ============================================================================
-// USAGE EXAMPLES - Button Click Integration with PiPFactory
-// ============================================================================
-
-/**
- * Example 1: Simple button click → Open PiP (auto-routes to native or popup)
- *
- * Add this to any page with a video:
- *   <button id="openPipBtn">Open PiP</button>
- */
-function setupPipButtonExample() {
-  // Wait for DOM to be ready
-  const openPipBtn = document.getElementById('openPipBtn');
-  if (!openPipBtn) return;
-
-  openPipBtn.addEventListener('click', async () => {
-    // Find the main video on the page
-    const video = findMainVideo();
-    if (!video) {
-      showToast('No video found on page', 'error');
-      return;
-    }
-
-    // Call PiPFactory.create() - it will automatically choose:
-    // - Native PiP if no native PiP is open
-    // - Popup PiP if a native PiP is already open (prevents replacement)
-    const result = await PiPFactory.create({
-      videoElement: video,
-      width: 480,
-      height: 270,
-    });
-
-    if (result.success) {
-      showToast(`PiP opened via ${result.method} mode`, 'success');
-      console.log('[FullPiP] PiP result:', result);
-    } else {
-      showToast(`Failed: ${result.error}`, 'error');
-    }
-  });
-}
-
-/**
- * Example 2: Force popup mode (bypass native PiP)
- */
-function setupForcePopupExample() {
-  const forcePopupBtn = document.getElementById('forcePopupBtn');
-  if (!forcePopupBtn) return;
-
-  forcePopupBtn.addEventListener('click', async () => {
-    const video = findMainVideo();
-    if (!video) {
-      showToast('No video found', 'error');
-      return;
-    }
-
-    // Force popup mode even if native is available
-    const result = await PiPFactory.create({
-      videoElement: video,
-      forcePopup: true, // ← Forces popup path
-      width: 640,
-      height: 360,
-    });
-
-    if (result.success) {
-      showToast(`Popup PiP opened (window ID: ${result.windowId})`, 'success');
-    }
-  });
-}
-
-/**
- * Example 3: Multi-monitor positioning (requires Chrome 102+)
- */
-function setupMultiMonitorExample() {
-  const multiMonitorBtn = document.getElementById('multiMonitorBtn');
-  if (!multiMonitorBtn) return;
-
-  multiMonitorBtn.addEventListener('click', async () => {
-    const video = findMainVideo();
-    if (!video) {
-      showToast('No video found', 'error');
-      return;
-    }
-
-    // Get available displays from background
-    const displays = await chrome.runtime.sendMessage({ action: 'getDisplays' });
-    if (!displays?.success || displays.displays.length < 2) {
-      showToast('Only one display detected, opening on current screen', 'warning');
-      // Fallback to single screen
-      const result = await PiPFactory.create({
-        videoElement: video,
-        forcePopup: true,
-      });
-      return;
-    }
-
-    // Open on second monitor
-    const secondDisplay = displays.displays.find(d => !d.isPrimary);
-    const result = await PiPFactory.create({
-      videoElement: video,
-      screenId: secondDisplay.id,
-      forcePopup: true, // Required for multi-monitor
-      width: 480,
-      height: 270,
-    });
-
-    if (result.success) {
-      showToast(`Opened on ${secondDisplay.name}`, 'success');
-    }
-  });
-}
-
-/**
- * Example 4: Check PiP state before opening
- */
-async function checkPipStateBeforeOpen() {
-  // Get current PiP state (cross-tab aware)
-  const state = await chrome.runtime.sendMessage({ action: 'getPipState' });
-
-  console.log('Native PiP open:', state.isOpen);
-  console.log('Active native PiP ID:', state.pipId);
-  console.log('Popup windows open:', state.popupCount);
-  console.log('Any PiP active:', state.hasAnyPip);
-
-  if (state.isOpen) {
-    console.log('A native PiP is open in another tab. New PiP will use popup mode.');
-  }
-
-  return state;
-}
-
-/**
- * Example 5: Close all PiP windows from content script (example usage)
- * NOTE: The real closeAllPipWindows() is defined above at line ~949.
- * This example shows how to use the background message for cross-tab close.
- */
-async function _example_closeAllPipViaBackground() {
-  const result = await chrome.runtime.sendMessage({ action: 'closeAllPip' });
-  if (result?.success) {
-    showToast(`Closed ${result.popups} popup(s) + native: ${result.native}`, 'success');
-  }
-  return result;
-}
-
-// Auto-setup examples if buttons exist on the page
-// (Uncomment these lines to enable the examples)
-// setupPipButtonExample();
-// setupForcePopupExample();
-// setupMultiMonitorExample();
 
 // ============================================================================
 // INITIALIZATION

@@ -1,6 +1,6 @@
 /**
  * @file popup.js
- * @desc FullPiP v4.0.0 — Clean, simplified popup UI
+ * @desc FullPiP — Clean, simplified popup UI
  */
 
 const KEYS = {
@@ -534,7 +534,7 @@ function scanForMediaInFrame() {
             if (aria) title = aria;
 
             return {
-                pipId: el.dataset.pipId || (el.dataset.pipId = Math.random().toString(36).substr(2, 9)),
+                pipId: el.dataset.pipId || (el.dataset.pipId = Math.random().toString(36).substring(2, 11)),
                 type: el.tagName.toLowerCase(),
                 src: el.currentSrc || el.src,
                 paused: el.paused,
