@@ -116,6 +116,31 @@ async function group(name, tests) {
     }
   ]);
 
+  await group('Mode routing (api/popup/hybrid)', [
+    () => {
+      // API mode → always native
+      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'api' }), false, 'api mode → native');
+      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'api', forcePopup: true }), false, 'api mode ignores forcePopup');
+      assertEq(PiPFactory._shouldUsePopup({ videoElement: null, mode: 'api' }), false, 'api mode ignores null video');
+    },
+    () => {
+      // Popup mode → always popup
+      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'popup' }), true, 'popup mode → popup');
+      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'popup', forceNative: true }), true, 'popup mode ignores forceNative');
+    },
+    () => {
+      // Hybrid mode → uses default logic
+      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'hybrid' }), false, 'hybrid → native (default)');
+      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'hybrid', forcePopup: true }), true, 'hybrid respects forcePopup');
+      assertEq(PiPFactory._shouldUsePopup({ videoElement: null, mode: 'hybrid' }), true, 'hybrid → popup (no video)');
+    },
+    () => {
+      // Default mode (no mode specified) → hybrid behavior
+      assertEq(PiPFactory._shouldUsePopup({ videoElement: {} }), false, 'no mode → native');
+      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, forcePopup: true }), true, 'no mode + forcePopup → popup');
+    }
+  ]);
+
   await group('Existing window detection', [
     () => {
       const saved = global.window.documentPictureInPicture;

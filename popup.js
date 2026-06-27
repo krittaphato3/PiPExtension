@@ -1,6 +1,6 @@
 /**
  * @file popup.js
- * @desc FullPiP v4.0.0 — Clean, simplified popup UI
+ * @desc FullPiP — Clean, simplified popup UI
  */
 
 const KEYS = {
@@ -534,7 +534,7 @@ function scanForMediaInFrame() {
             if (aria) title = aria;
 
             return {
-                pipId: el.dataset.pipId || (el.dataset.pipId = Math.random().toString(36).substr(2, 9)),
+                pipId: el.dataset.pipId || (el.dataset.pipId = Math.random().toString(36).substring(2, 11)),
                 type: el.tagName.toLowerCase(),
                 src: el.currentSrc || el.src,
                 paused: el.paused,
@@ -998,18 +998,23 @@ async function updatePipCount() {
         }
     });
 
-    // Export settings
-    document.getElementById('exportSettingsBtn').addEventListener('click', exportSettings);
-    
-    // Import settings
-    document.getElementById('importSettingsInput').addEventListener('change', (e) => {
-        if (e.target.files?.[0]) {
-            importSettings(e.target.files[0]);
-        }
-    });
-    
-    // Reset all settings
-    document.getElementById('resetAllSettingsBtn').addEventListener('click', resetAllSettings);
+    // Export settings (guarded)
+    const exportBtn = document.getElementById('exportSettingsBtn');
+    if (exportBtn) exportBtn.addEventListener('click', exportSettings);
+
+    // Import settings (guarded)
+    const importInput = document.getElementById('importSettingsInput');
+    if (importInput) {
+        importInput.addEventListener('change', (e) => {
+            if (e.target.files?.[0]) {
+                importSettings(e.target.files[0]);
+            }
+        });
+    }
+
+    // Reset all settings (guarded)
+    const resetBtn = document.getElementById('resetAllSettingsBtn');
+    if (resetBtn) resetBtn.addEventListener('click', resetAllSettings);
     
     // Initial media scan
     refreshMediaList();

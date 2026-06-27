@@ -256,7 +256,7 @@ function showNotification(title, message, type = 'info') {
     
     chrome.notifications.create({
         type: 'basic',
-        iconUrl: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%233b82f6" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/></svg>',
+        iconUrl: 'logo.svg',
         title: title,
         message: message,
         priority: type === 'error' ? 2 : 0
