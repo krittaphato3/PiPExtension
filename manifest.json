@@ -53,7 +53,7 @@
     }
   },
   "web_accessible_resources": [{
-    "resources": ["*.png", "*.svg", "player.html", "player.js"],
+    "resources": ["player.html"],
     "matches": ["<all_urls>"]
   }]
 }

@@ -31,6 +31,9 @@ let cachedDisplays = [];
 let displaysCacheTime = 0;
 const DISPLAYS_CACHE_DURATION = 60000; // 1 minute
 
+// Rate limiting state
+const background = { _lastRateLimitedAction: 0 };
+
 // ============================================================================
 // CROSS-TAB NATIVE PIP STATE SYNC
 // The primary cleanup is pipWindow.addEventListener('pagehide') in pipFactory.js.
@@ -379,6 +382,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.action === "tabClosed" && sender.tab?.id) {
         CONFIG.CONTENT_SCRIPT_READY.delete(sender.tab.id);
         return true;
+    }
+
+    // Rate limiting for expensive operations
+    const rateLimitedActions = ['createPopupPip', 'closeAllPip', 'closeAllPopupPip', 'hybridPipRequest'];
+    if (rateLimitedActions.includes(msg.action)) {
+        const now = Date.now();
+        if (background._lastRateLimitedAction && (now - background._lastRateLimitedAction) < 200) {
+            sendResponse({ success: false, error: 'Rate limited — try again in a moment' });
+            return true;
+        }
+        background._lastRateLimitedAction = now;
     }
 
     // ── New: Direct popup creation from content script ─────────────────────

@@ -45,6 +45,14 @@ FullPiP offers three distinct operational modes that automatically adapt to your
 - **Keyboard Shortcuts**: Comprehensive hotkey support for power users
 - **Settings Persistence**: Cross-session configuration with Chrome storage sync
 
+### User Experience Enhancements
+
+- **Picker Mode (Alt+K)**: Select any element on the page for PiP
+- **Auto-PiP**: Automatically opens PiP when a video starts playing
+- **Settings Export/Import**: Backup and restore your configuration
+- **Multi-Monitor Placement**: Place PiP windows on specific displays
+- **Configurable Toast Notifications**: Control duration and visibility of on-screen notifications
+
 ## Installation
 
 ### From Chrome Web Store
@@ -120,6 +128,7 @@ Choose from three operational modes in the extension settings:
 - **Scale Mode**: Normal, Fit, Fill, or Stretch
 - **Zoom & Pan**: Mouse/touch controls with keyboard shortcuts
 - **Edge Resistance**: Prevent dragging content outside window bounds
+- **Initial Size**: Set default PiP window size (Visual/Actual/Fit)
 
 ### Interaction Settings
 
@@ -127,6 +136,17 @@ Choose from three operational modes in the extension settings:
 - **Smart Zoom**: Prevent zooming below 100%
 - **Zoom Speed**: Adjustable sensitivity (0.1x - 3.0x)
 - **Auto-Scroll**: Automatically scroll to highlighted media
+- **Highlight on Hover**: Visual highlight when hovering over media elements
+- **Cache Media List**: Cache detected media for faster access
+
+### Automation Settings
+
+- **Auto-PiP Mode**: Automatically open PiP when a video starts playing
+
+### Notification Settings
+
+- **Toast Duration**: Set notification display time (1-10 seconds)
+- **Show Notifications**: Toggle toast notifications on or off
 
 ## Architecture
 
@@ -173,12 +193,13 @@ FullPiP requires the following Chrome permissions:
 - `scripting`: Inject content scripts for PiP functionality
 - `windows`: Create and manage popup PiP windows
 - `system.display`: Multi-monitor support
+- `notifications`: Display toast notifications for user feedback
 
 ## Development
 
 ### Prerequisites
 
-- Chrome Browser (version 88+ for Manifest V3 support)
+- Chrome Browser (version 109+ for Manifest V3 support)
 - Node.js (for running tests)
 - Git (for version control)
 
@@ -274,7 +295,22 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Changelog
 
-### Version 1.0.0 Alpha (Current)
+### Version 1.1.0
+
+- Hybrid PiP engine (native API + popup windows)
+- Multi-monitor support with display detection
+- Settings export/import/reset
+- Picker mode (Alt+K) for element selection
+- Auto-PiP mode
+- Configurable toast duration and notifications
+- Scale modes (Normal/Fit/Fill/Stretch)
+- Background options (Auto/Black/White/Checkerboard)
+- Edge resistance and smart zoom controls
+- Live image sync in PiP windows
+- Deduplication to prevent duplicate PiP windows
+- Bug fixes and performance improvements
+
+### Version 1.0.0
 
 - Intelligent PiP routing with three operational modes
 - Unlimited multi-window PiP support
