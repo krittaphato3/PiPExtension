@@ -18,7 +18,7 @@
                         <path d="M12 2v20"/><path d="M2 12h20"/>
                     </svg>
                 </div>
-                <h1>FullPiP <span class="badge alpha">Alpha</span></h1>
+                <h1>FullPiP <span class="badge">v1.1.0</span></h1>
             </div>
             <div class="header-actions">
                 <button id="themeBtn" class="header-icon" title="Toggle Theme"></button>
@@ -108,6 +108,17 @@
                                 <option value="black">Black</option>
                                 <option value="white">White</option>
                                 <option value="grid">Checkerboard</option>
+                            </select>
+                        </div>
+                        <div class="setting-item mb-2">
+                            <div class="meta">
+                                <span class="label">Initial Size</span>
+                                <span class="desc">How large image PiP windows open</span>
+                            </div>
+                            <select id="pipInitialSize" class="dropdown">
+                                <option value="visual">Visual Size</option>
+                                <option value="actual">Actual Size</option>
+                                <option value="fit">Fit to Screen</option>
                             </select>
                         </div>
                         <div class="setting-item">
@@ -338,7 +349,7 @@
             <div class="status">
                 <span class="version">v1.1.0</span>
                 <span class="status-dot"></span>
-                <span>Hybrid PiP Engine</span>
+                <span id="footerMode">Hybrid PiP Engine</span>
             </div>
             <a href="https://github.com/krittaphato3" target="_blank" class="author">krittaphato3</a>
         </footer>

@@ -33,6 +33,7 @@ const state = {
   videoUrl: null,
   retryCount: 0,
   isLoaded: false,
+  isLoading: false,
 };
 
 // ============================================================================
@@ -60,6 +61,18 @@ function init() {
     return;
   }
 
+  // Validate URL scheme
+  try {
+    const parsed = new URL(state.videoUrl);
+    if (!['https:', 'http:', 'blob:'].includes(parsed.protocol)) {
+      showError('Invalid video source', 'Only HTTP, HTTPS, and blob URLs are supported.');
+      return;
+    }
+  } catch (e) {
+    showError('Invalid video source', 'The provided URL is not valid.');
+    return;
+  }
+
   console.log(`[FullPiP Player] Loading video: ${state.videoUrl}`);
 
   // Setup event listeners
@@ -76,6 +89,7 @@ function init() {
 // ============================================================================
 function loadVideo() {
   if (!state.videoUrl) return;
+  state.isLoading = true;
 
   // Reset state
   state.isLoaded = false;
@@ -109,17 +123,18 @@ async function attemptAutoplay() {
       els.player.muted = true;
       await els.player.play();
       console.log('[FullPiP Player] Muted autoplay succeeded');
-      
-      // Try to unmute after 1 second if user hasn't interacted
-      setTimeout(() => {
+
+      // Unmute only after user interaction (click or keypress)
+      const unmuteOnInteraction = () => {
         try {
           els.player.muted = false;
-          console.log('[FullPiP Player] Attempted to unmute');
-        } catch (e) {
-          // If unmute fails, stay muted
-          console.debug('[FullPiP Player] Could not unmute, staying muted');
-        }
-      }, 1000);
+          console.log('[FullPiP Player] Unmuted after user interaction');
+        } catch {}
+        document.removeEventListener('click', unmuteOnInteraction);
+        document.removeEventListener('keydown', unmuteOnInteraction);
+      };
+      document.addEventListener('click', unmuteOnInteraction, { once: true });
+      document.addEventListener('keydown', unmuteOnInteraction, { once: true });
     } catch (e2) {
       console.debug('[FullPiP Player] Muted autoplay also prevented:', e2.message);
       // Attempt 3: Show play button overlay
@@ -198,6 +213,7 @@ function retryLoad() {
 function setupPlayerListeners() {
   // Video is ready to play
   els.player.addEventListener('canplay', () => {
+    state.isLoading = false;
     if (!state.isLoaded) {
       state.isLoaded = true;
       setTimeout(() => hideLoader(), PLAYER_CONFIG.LOADER_HIDE_DELAY_MS);
@@ -292,7 +308,8 @@ function setupKeyboardListeners() {
 
 function setupRetryListener() {
   els.retryBtn.addEventListener('click', () => {
-    state.retryCount = 0; // Reset retry counter for manual retry
+    if (state.isLoading) return;
+    state.retryCount = 0;
     loadVideo();
   });
 }
@@ -301,6 +318,7 @@ function setupRetryListener() {
 // ERROR HANDLING
 // ============================================================================
 function handleVideoError() {
+  state.isLoading = false;
   const error = els.player.error;
 
   if (!error) {

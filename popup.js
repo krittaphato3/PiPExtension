@@ -19,6 +19,8 @@ const KEYS = {
     HIGHLIGHT_ON_HOVER: 'highlightOnHover',
     AUTO_SCROLL_TO_MEDIA: 'autoScrollToMedia',
     CACHE_MEDIA_LIST: 'cacheMediaList',
+    INITIAL_SIZE: 'pipInitialSize',
+    FORCE_POPUP: 'forcePopup',
 };
 
 const DEFAULTS = {
@@ -37,6 +39,8 @@ const DEFAULTS = {
     [KEYS.HIGHLIGHT_ON_HOVER]: true,
     [KEYS.AUTO_SCROLL_TO_MEDIA]: true,
     [KEYS.CACHE_MEDIA_LIST]: true,
+    [KEYS.INITIAL_SIZE]: 'visual',
+    [KEYS.FORCE_POPUP]: false,
 };
 
 // Media Cache
@@ -122,6 +126,7 @@ const els = {
         [KEYS.HIGHLIGHT_ON_HOVER]: document.getElementById('highlightOnHover'),
         [KEYS.AUTO_SCROLL_TO_MEDIA]: document.getElementById('autoScrollToMedia'),
         [KEYS.CACHE_MEDIA_LIST]: document.getElementById('cacheMediaList'),
+        [KEYS.INITIAL_SIZE]: document.getElementById('pipInitialSize'),
     }
 };
 
@@ -162,6 +167,13 @@ function updateModeUI(mode) {
     if (els.multiMonitorSection) {
         const showMultiMonitor = mode === 'popup' || mode === 'hybrid';
         els.multiMonitorSection.style.display = showMultiMonitor ? 'block' : 'none';
+    }
+
+    // Update footer mode text
+    const footerMode = document.getElementById('footerMode');
+    if (footerMode) {
+        const modeNames = { api: 'PiP API', popup: 'Popup Windows', hybrid: 'Hybrid PiP Engine' };
+        footerMode.textContent = modeNames[mode] || 'Hybrid PiP Engine';
     }
 
     console.log(`[FullPiP] Mode set to: ${mode.toUpperCase()}`);
@@ -274,13 +286,13 @@ function showToast(message, type = 'info', duration = 2500) {
 // ============================================================================
 // SETTINGS MANAGEMENT
 // ============================================================================
-let saveTimeout;
+let syncSaveTimeout;
 let pendingSyncUpdates = {}; // Queue for sync migration
 let isSyncing = false; // Prevent concurrent sync operations
 
 // Optimized save: immediate local save + async sync migration
 function saveSetting(key, value, showFeedback = false) {
-    clearTimeout(saveTimeout);
+    clearTimeout(syncSaveTimeout);
 
     // 1. Save immediately to chrome.storage.local (instant UI responsiveness)
     chrome.storage.local.set({ [key]: value }, () => {
@@ -298,7 +310,7 @@ function saveSetting(key, value, showFeedback = false) {
         pendingSyncUpdates[key] = value;
 
         // 3. Debounce sync migration (500ms after interaction stops for better UX)
-        saveTimeout = setTimeout(() => {
+        syncSaveTimeout = setTimeout(() => {
             flushSyncQueue(showFeedback).catch(err => {
                 console.warn('[FullPiP] Sync migration failed:', err.message);
                 // Don't show error toast for sync failures to avoid spam
@@ -341,7 +353,7 @@ async function flushSyncQueue(showFeedback = false) {
 }
 
 function saveDebounced(key, val, labelEl, formatFn) {
-    clearTimeout(saveTimeout);
+    clearTimeout(syncSaveTimeout);
 
     // Save immediate to local for instant UI responsiveness
     chrome.storage.local.set({ [key]: val });
@@ -353,7 +365,7 @@ function saveDebounced(key, val, labelEl, formatFn) {
     }
 
     // Debounce sync migration
-    saveTimeout = setTimeout(() => {
+    syncSaveTimeout = setTimeout(() => {
         flushSyncQueue(false);
     }, 2000);
 }
@@ -678,7 +690,7 @@ function renderMediaList(mediaItems, container, tabId) {
         const thumbEl = document.createElement('div');
         thumbEl.className = thumbClass;
         if (media.thumbnail) {
-            thumbEl.style.backgroundImage = `url('${media.thumbnail}')`;
+            thumbEl.style.backgroundImage = `url('${CSS.escape(media.thumbnail)}')`;
         } else {
             thumbEl.style.background = 'var(--input-bg)';
             thumbEl.style.display = 'flex';
@@ -846,28 +858,34 @@ async function updatePipCount() {
             els.pipCount.textContent = totalCount;
 
             // Update status bar with method-specific indicator
-            if (state.isOpen) {
-                els.pipStatusBar.classList.add('active');
-                els.pipStatusBar.dataset.pipMethod = 'native';
-                // Update status text
-                const statusText = els.pipStatusBar.querySelector('.status-text');
-                if (statusText) {
-                    statusText.innerHTML = `<span id="pipCount">${totalCount}</span> PiP window(s) active <span class="pip-method-badge native">Native</span>`;
+            const statusText = els.pipStatusBar.querySelector('.status-text');
+            if (statusText) {
+                statusText.textContent = '';
+                const countSpan = document.createElement('span');
+                countSpan.id = 'pipCount';
+                countSpan.textContent = totalCount;
+                statusText.appendChild(countSpan);
+                statusText.append(` PiP window(s) active `);
+
+                if (state.isOpen) {
+                    const badge = document.createElement('span');
+                    badge.className = 'pip-method-badge native';
+                    badge.textContent = 'Native';
+                    statusText.appendChild(badge);
+                } else if (state.popupCount > 0) {
+                    const badge = document.createElement('span');
+                    badge.className = 'pip-method-badge popup';
+                    badge.textContent = 'Popup';
+                    statusText.appendChild(badge);
                 }
-            } else if (state.popupCount > 0) {
+            }
+
+            if (state.isOpen || state.popupCount > 0) {
                 els.pipStatusBar.classList.add('active');
-                els.pipStatusBar.dataset.pipMethod = 'popup';
-                const statusText = els.pipStatusBar.querySelector('.status-text');
-                if (statusText) {
-                    statusText.innerHTML = `<span id="pipCount">${totalCount}</span> PiP window(s) active <span class="pip-method-badge popup">Popup</span>`;
-                }
+                els.pipStatusBar.dataset.pipMethod = state.isOpen ? 'native' : 'popup';
             } else {
                 els.pipStatusBar.classList.remove('active');
                 els.pipStatusBar.removeAttribute('data-pip-method');
-                const statusText = els.pipStatusBar.querySelector('.status-text');
-                if (statusText) {
-                    statusText.innerHTML = `<span id="pipCount">0</span> PiP window(s) active`;
-                }
             }
         } else {
             // Fallback to old method if background not ready
@@ -957,7 +975,16 @@ async function updatePipCount() {
             updateModeUI(mode);
         });
     }
-    
+
+    // Show notification when notifications are disabled
+    if (els.inputs[KEYS.SHOW_NOTIFICATIONS]) {
+        els.inputs[KEYS.SHOW_NOTIFICATIONS].addEventListener('change', (e) => {
+            if (!e.target.checked) {
+                showToast('Notifications disabled. PiP actions will work silently.', 'info', 3000);
+            }
+        });
+    }
+
     // Theme toggle
     els.themeBtn.addEventListener('click', () => {
         const isDark = els.body.getAttribute('data-theme') !== 'light';
@@ -1083,6 +1110,19 @@ async function updatePipCount() {
     if (!monitorSelect || !displayCountBadge || !forcePopupCheckbox ||
         !launchMonitorPipBtn || !refreshDisplaysBtn) {
         console.warn('[FullPiP] Multi-monitor UI elements missing');
+    }
+
+    // Force Popup checkbox persistence
+    if (forcePopupCheckbox) {
+        // Restore value from storage
+        const forcePopupVal = items[KEYS.FORCE_POPUP];
+        if (forcePopupVal !== undefined) {
+            forcePopupCheckbox.checked = forcePopupVal;
+        }
+
+        forcePopupCheckbox.addEventListener('change', (e) => {
+            saveSetting(KEYS.FORCE_POPUP, e.target.checked);
+        });
     }
 
     let availableDisplays = [];
