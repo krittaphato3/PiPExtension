@@ -1,5 +1,5 @@
 
-# FullPiP Full Version
+# FullPiP — Picture-in-Picture
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Available-blue?style=flat-square)](https://chrome.google.com/webstore)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
@@ -325,5 +325,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**FullPiP** - Advanced Picture-in-Picture for the modern web.</content>
-<parameter name="filePath">README.md
+**FullPiP** — Advanced Picture-in-Picture for the modern web.
