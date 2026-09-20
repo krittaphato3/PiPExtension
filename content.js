@@ -9,38 +9,38 @@
 // ============================================================================
 const CONFIG = {
   // Zoom constraints
-  ZOOM_MIN: 1.0,           // Minimum zoom level (1.0 = 100%, no shrink)
-  ZOOM_MAX: 10.0,          // Maximum zoom level
-  ZOOM_STEP_IN: 1.1,       // Zoom in multiplier
-  ZOOM_STEP_OUT: 0.9,      // Zoom out multiplier
-  ZOOM_RESET_KEY: '0',     // Key to reset zoom/pan
-  
+  ZOOM_MIN: 1.0, // Minimum zoom level (1.0 = 100%, no shrink)
+  ZOOM_MAX: 10.0, // Maximum zoom level
+  ZOOM_STEP_IN: 1.1, // Zoom in multiplier
+  ZOOM_STEP_OUT: 0.9, // Zoom out multiplier
+  ZOOM_RESET_KEY: '0', // Key to reset zoom/pan
+
   // Pan constraints
-  PAN_STEP: 20,            // Arrow key pan step (pixels)
-  DRAG_THRESHOLD: 1.0,     // Minimum zoom to allow dragging
-  
+  PAN_STEP: 20, // Arrow key pan step (pixels)
+  DRAG_THRESHOLD: 1.0, // Minimum zoom to allow dragging
+
   // Size constraints
-  MIN_WINDOW_WIDTH: 150,   // Minimum PiP window width
-  MIN_WINDOW_HEIGHT: 150,  // Minimum PiP window height
-  MAX_SCREEN_RATIO: 0.9,   // Max screen coverage for "actual" size
-  
+  MIN_WINDOW_WIDTH: 150, // Minimum PiP window width
+  MIN_WINDOW_HEIGHT: 150, // Minimum PiP window height
+  MAX_SCREEN_RATIO: 0.9, // Max screen coverage for "actual" size
+
   // Performance
-  DEBOUNCE_SYNC_MS: 50,    // Live sync debounce delay
+  DEBOUNCE_SYNC_MS: 50, // Live sync debounce delay
   HIGHLIGHT_DURATION_MS: 2000, // How long highlight stays after hover
-  
+
   // Picker mode
   PICKER_HIGHLIGHT_CLASS: 'fullpip-picker-highlight',
   PICKER_STYLE_ID: 'fullpip-picker-style',
-  
+
   // Multi-PiP limits
   MAX_PIP_WINDOWS: 3,
-  
+
   // Toast notifications
   TOAST_DURATION_MS: 2500,
   TOAST_POSITION: 'bottom-right',
-  
+
   // Memory cleanup
-  CLEANUP_INTERVAL_MS: 30000, // Clean mediaMap every 30s
+  CLEANUP_INTERVAL_MS: 30000 // Clean mediaMap every 30s
 };
 
 // ============================================================================
@@ -48,11 +48,11 @@ const CONFIG = {
 // ============================================================================
 const State = {
   lastRightClickTarget: null,
-  pipWindows: new Map(),        // Track multiple PiP windows by ID
+  pipWindows: new Map(), // Track multiple PiP windows by ID
   observer: null,
   isHoveringPip: false,
   isPickerActive: false,
-  activeMediaId: null,          // Currently playing media ID
+  activeMediaId: null, // Currently playing media ID
   cleanupTimer: null,
   toastContainer: null,
   pageListeners: {
@@ -67,7 +67,7 @@ const State = {
     click: null,
     keydown: null
   },
-  errorCount: 0,                // Track errors for debugging
+  errorCount: 0, // Track errors for debugging
   lastErrorTime: 0
 };
 
@@ -83,9 +83,9 @@ const CachedSettings = {
 
   async get(keys = null) {
     const now = Date.now();
-    if (this.data && (now - this.timestamp) < this.CACHE_DURATION) {
+    if (this.data && now - this.timestamp < this.CACHE_DURATION) {
       if (keys) {
-        return keys.reduce((acc, k) => ({...acc, [k]: this.data[k]}), {});
+        return keys.reduce((acc, k) => ({ ...acc, [k]: this.data[k] }), {});
       }
       return this.data;
     }
@@ -93,7 +93,7 @@ const CachedSettings = {
     // Read from BOTH storage areas simultaneously — local overrides sync
     const [localResult, syncResult] = await Promise.all([
       chrome.storage.local.get(keys),
-      chrome.storage.sync.get(keys),
+      chrome.storage.sync.get(keys)
     ]);
 
     // Merge: sync as base, local takes precedence for recent changes
@@ -101,11 +101,11 @@ const CachedSettings = {
     this.timestamp = now;
 
     if (keys) {
-      return keys.reduce((acc, k) => ({...acc, [k]: this.data[k]}), {});
+      return keys.reduce((acc, k) => ({ ...acc, [k]: this.data[k] }), {});
     }
     return this.data;
   },
-  
+
   invalidate() {
     this.data = null;
     this.timestamp = 0;
@@ -124,7 +124,7 @@ function setupGlobalErrorHandlers() {
   State.pageListeners.error = (e) => {
     State.errorCount++;
     State.lastErrorTime = Date.now();
-    
+
     const errorInfo = {
       message: e.error?.message || e.message || 'Unknown error',
       source: e.filename || 'content.js',
@@ -132,24 +132,26 @@ function setupGlobalErrorHandlers() {
       column: e.colno,
       stack: e.error?.stack
     };
-    
+
     console.error('[FullPiP] Uncaught Error:', errorInfo);
-    
+
     // Show user-friendly error for critical failures
-    if (errorInfo.message.includes('PictureInPicture') || 
-        errorInfo.message.includes('documentPictureInPicture')) {
+    if (
+      errorInfo.message.includes('PictureInPicture') ||
+      errorInfo.message.includes('documentPictureInPicture')
+    ) {
       showToast('PiP feature unavailable on this page', 'error');
     }
   };
   window.addEventListener('error', State.pageListeners.error);
-  
+
   // Unhandled promise rejections
   State.pageListeners.unhandledrejection = (e) => {
     State.errorCount++;
     State.lastErrorTime = Date.now();
-    
+
     console.error('[FullPiP] Unhandled Promise Rejection:', e.reason);
-    
+
     // Prevent default logging
     e.preventDefault();
   };
@@ -202,14 +204,41 @@ function startCleanupTimer() {
   State.cleanupTimer = setInterval(pruneMediaMap, CONFIG.CLEANUP_INTERVAL_MS);
 }
 
+/**
+ * Collect all media elements by traversing light DOM + open shadow roots.
+ *
+ * LIMITATION — iframes: cross-origin iframes are opaque to this content script
+ * (same-origin policy). This function intentionally only sees the top frame's
+ * DOM. Cross-frame videos require `chrome.runtime` messaging with `all_frames`
+ * enumeration (e.g. background queries each frameId via `chrome.tabs.sendMessage`
+ * and aggregates results). See TODO below.
+ *
+ * TODO: enumerate frameIds (chrome.scripting.getResults / tabs.sendMessage with
+ * frameId) and aggregate per-frame media via allFrames messaging so popup can
+ * list iframe videos. Until then, iframe videos remain invisible to the picker.
+ */
 const getAllMediaDeep = (root = document) => {
-  let media = Array.from(root.querySelectorAll('video, audio'));
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
-  let node;
-  while(node = walker.nextNode()) {
-    if (node.shadowRoot) {
-      media = media.concat(getAllMediaDeep(node.shadowRoot));
+  if (!root || typeof root.querySelectorAll !== 'function') return [];
+  let media = [];
+  try {
+    media = Array.from(root.querySelectorAll('video, audio'));
+  } catch {
+    return [];
+  }
+  // TreeWalker is only available on Document/Element roots in the top frame.
+  try {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.shadowRoot) {
+        media = media.concat(getAllMediaDeep(node.shadowRoot));
+      }
+      // NOTE: intentionally skip IFRAME traversal here — cross-origin frames
+      // throw on contentDocument access; same-origin frames in this isolated
+      // world may also diverge. Use allFrames messaging instead (see TODO).
     }
+  } catch {
+    /* non-Document roots (e.g. ShadowRoot in some browsers) */
   }
   return media;
 };
@@ -218,24 +247,28 @@ const findMediaById = (id) => {
   pruneMediaMap();
   if (mediaMap.has(id)) return mediaMap.get(id);
   const all = getAllMediaDeep(document);
-  const found = all.find(el => el.dataset.pipId === id);
+  const found = all.find((el) => el.dataset.pipId === id);
   if (found) mediaMap.set(id, found);
   return found;
 };
 
 const findMainVideo = () => {
-  const visible = getAllMediaDeep(document).filter(v => {
+  const visible = getAllMediaDeep(document).filter((v) => {
     const r = v.getBoundingClientRect();
-    return r.width > 20 && r.height > 20 &&
-           getComputedStyle(v).display !== 'none' &&
-           getComputedStyle(v).visibility !== 'hidden';
+    return (
+      r.width > 20 &&
+      r.height > 20 &&
+      getComputedStyle(v).display !== 'none' &&
+      getComputedStyle(v).visibility !== 'hidden'
+    );
   });
   if (!visible.length) return null;
   visible.sort((a, b) => {
-    const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
-    return (rb.width * rb.height) - (ra.width * ra.height);
+    const ra = a.getBoundingClientRect(),
+      rb = b.getBoundingClientRect();
+    return rb.width * rb.height - ra.width * ra.height;
   });
-  const playing = visible.find(v => !v.paused && v.readyState > 2);
+  const playing = visible.find((v) => !v.paused && v.readyState > 2);
   return playing || visible[0];
 };
 
@@ -248,6 +281,7 @@ const TOAST_THROTTLE_MS = 2000; // 2 seconds between info toasts
 
 function ensureToastContainer() {
   if (State.toastContainer && State.toastContainer.isConnected) return State.toastContainer;
+  if (!document.body) return null;
 
   State.toastContainer = document.createElement('div');
   State.toastContainer.className = 'fullpip-toast-container';
@@ -277,6 +311,7 @@ function showToast(message, type = 'info', duration = CONFIG.TOAST_DURATION_MS) 
   }
 
   const container = ensureToastContainer();
+  if (!container) return;
 
   const toast = document.createElement('div');
   toast.className = `fullpip-toast fullpip-toast-${type}`;
@@ -310,26 +345,29 @@ function showToast(message, type = 'info', duration = CONFIG.TOAST_DURATION_MS) 
 function setupEventListeners() {
   // Clean up any existing listeners first
   cleanupEventListeners();
-  
+
   // Mousedown listener for right-click tracking
   State.pageListeners.mousedown = (e) => {
     if (State.isPickerActive) return;
     if (e.button === 2) State.lastRightClickTarget = e.target;
   };
-  document.addEventListener("mousedown", State.pageListeners.mousedown, true);
-  
-  // Storage change listener
+  document.addEventListener('mousedown', State.pageListeners.mousedown, true);
+
+  // Storage change listener — watch BOTH areas (popup writes local for
+  // speed, sync for cross-device). Invalidate the 5s settings cache so the
+  // next CachedSettings.get() re-reads; TTL otherwise stays at 5s.
   State.pageListeners.storage = (changes, area) => {
-    if (area !== 'sync') return;
-    
+    if (area !== 'sync' && area !== 'local') return;
+    CachedSettings.invalidate();
+
     // Update all active PiP windows with new settings
     for (const [pipId, pipData] of State.pipWindows.entries()) {
       const doc = pipData.window?.document;
       if (!doc) continue;
-      
+
       const img = doc.querySelector('img, video');
       const body = doc.body;
-      
+
       if (changes.pipScaleMode && img) {
         img.style.objectFit = changes.pipScaleMode.newValue;
       }
@@ -339,18 +377,18 @@ function setupEventListeners() {
     }
   };
   chrome.storage.onChanged.addListener(State.pageListeners.storage);
-  
+
   // Message listener
   State.pageListeners.message = handleRuntimeMessage;
   chrome.runtime.onMessage.addListener(State.pageListeners.message);
-  
+
   // Start cleanup timer
   startCleanupTimer();
 }
 
 function cleanupEventListeners() {
   if (State.pageListeners.mousedown) {
-    document.removeEventListener("mousedown", State.pageListeners.mousedown, true);
+    document.removeEventListener('mousedown', State.pageListeners.mousedown, true);
     State.pageListeners.mousedown = null;
   }
   if (State.pageListeners.storage) {
@@ -387,11 +425,11 @@ function cleanupEventListeners() {
 // ============================================================================
 async function handleRuntimeMessage(req, sender, sendResponse) {
   switch (req.action) {
-    case "contextMenuTrigger":
+    case 'contextMenuTrigger':
       req.type === 'video' ? launchVideoPiP(req.srcUrl) : launchImagePiP();
       sendResponse({ success: true });
       break;
-    case "shortcutTrigger":
+    case 'shortcutTrigger':
       // ✅ IMPROVED: Comprehensive PiP state detection and toggle logic
       // Check all possible PiP states: native video PiP, document PiP, popup PiP
 
@@ -420,7 +458,11 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
       // Also check if any native PiP is open cross-tab (from state manager)
       const hasCrossTabNativePip = pipState?.isOpen || false;
 
-      const totalPipCount = (hasNativePip ? 1 : 0) + (hasCrossTabNativePip && !hasNativePip ? 1 : 0) + localPopupCount + backgroundPopupCount;
+      const totalPipCount =
+        (hasNativePip ? 1 : 0) +
+        (hasCrossTabNativePip && !hasNativePip ? 1 : 0) +
+        localPopupCount +
+        backgroundPopupCount;
 
       console.debug('[FullPiP] Alt+P toggle check:', {
         hasVideoPip,
@@ -468,7 +510,11 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
           console.warn('[FullPiP] Failed to close background PiP:', e.message);
         }
 
-        showToast(`Closed ${totalPipCount} PiP window${totalPipCount > 1 ? 's' : ''}`, 'success', 1500);
+        showToast(
+          `Closed ${totalPipCount} PiP window${totalPipCount > 1 ? 's' : ''}`,
+          'success',
+          1500
+        );
         sendResponse({ success: true, action: 'closed', count: totalPipCount });
       } else {
         // No PiP → open for main video
@@ -498,63 +544,81 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
           sendResponse({ success: false, error: 'No media' });
         }
       }
-      break;
-    case "togglePickerMode":
+      return true; // Keep channel open: getPipState/closeAllPip/launchVideoPiP complete async before sendResponse
+    case 'togglePickerMode':
       togglePickerMode();
       sendResponse({ success: true, active: State.isPickerActive });
       break;
-    case "controlMedia":
+    case 'controlMedia':
       const el = findMediaById(req.id);
       if (el) {
         if (req.command === 'pip') {
           // Route through FullPiP engine to apply all settings (scale mode, zoom, etc.)
           if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') {
-            launchVideoPiP(el).then(() => {
-              sendResponse({ success: true });
-            }).catch(err => {
-              // Fallback: try native PiP if FullPiP fails
-              try { el.requestPictureInPicture(); } catch {}
-              sendResponse({ success: true });
-            });
+            launchVideoPiP(el)
+              .then(() => {
+                sendResponse({ success: true });
+              })
+              .catch((err) => {
+                // Fallback: try native PiP if FullPiP fails
+                try {
+                  el.requestPictureInPicture();
+                } catch {}
+                sendResponse({ success: true });
+              });
             return true; // Async response
           } else {
             // For images/other elements, use native Document PiP
-            launchElementPiP(el).then(() => {
-              sendResponse({ success: true });
-            }).catch(err => {
-              sendResponse({ success: false, error: err?.message || 'Failed' });
-            });
+            launchElementPiP(el)
+              .then(() => {
+                sendResponse({ success: true });
+              })
+              .catch((err) => {
+                sendResponse({ success: false, error: err?.message || 'Failed' });
+              });
             return true; // Async response
           }
         } else if (req.command === 'togglePlay') {
-          el.paused ? el.play() : el.pause();
+          if (el.paused) {
+            try {
+              await el.play();
+            } catch (err) {
+              sendResponse({
+                success: false,
+                error: err?.message || 'Play blocked (autoplay policy)'
+              });
+              break;
+            }
+          } else {
+            el.pause();
+          }
         }
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'Media not found' });
       }
       break;
-    case "highlightMedia":
+    case 'highlightMedia':
       const hEl = findMediaById(req.id);
       if (hEl) {
         if (req.active) {
-          hEl.style.outline = "4px solid #3b82f6";
-          hEl.style.outlineOffset = "-4px";
-          hEl.style.boxShadow = "0 0 20px rgba(59, 130, 246, 0.6)";
+          hEl.style.outline = '4px solid #3b82f6';
+          hEl.style.outlineOffset = '-4px';
+          hEl.style.boxShadow = '0 0 20px rgba(59, 130, 246, 0.6)';
           if (req.scroll !== false) {
-            hEl.scrollIntoView({behavior: "smooth", block: "center"});
+            hEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
         } else {
-          hEl.style.outline = "";
-          hEl.style.outlineOffset = "";
-          hEl.style.boxShadow = "";
+          hEl.style.outline = '';
+          hEl.style.outlineOffset = '';
+          hEl.style.boxShadow = '';
         }
         sendResponse({ success: true });
       } else {
         sendResponse({ success: false, error: 'Media not found' });
       }
       break;
-    case "closeAllPip":
+    case 'closeAllPip':
       // Close local Document PiP windows tracked by content script
       closeAllPipWindows();
       // Also tell background to close popup PiP windows it tracks
@@ -563,7 +627,7 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
       break;
 
     // ✅ FIX: Handle popup window closed notification from service worker
-    case "popupWindowClosed":
+    case 'popupWindowClosed':
       console.debug('[FullPiP] Popup window closed notification:', req.windowId);
       // Clean up local dedup tracking
       if (req.sourceId && typeof PiPFactory !== 'undefined') {
@@ -573,7 +637,7 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
       break;
 
     // ✅ FIX: Pause source video when popup opens
-    case "pauseSourceVideo":
+    case 'pauseSourceVideo':
       const videoToPause = findMainVideo();
       if (videoToPause && !videoToPause.paused) {
         videoToPause.pause();
@@ -582,27 +646,29 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
       sendResponse({ success: true });
       break;
 
-    case "getPipCount":
+    case 'getPipCount':
       sendResponse({ count: State.pipWindows.size });
       break;
-    case "ping":
+    case 'ping':
       sendResponse({ status: 'ok', pipCount: State.pipWindows.size });
       break;
 
     // Hybrid PiP control from popup UI
-    case "launchVideoPopup":
+    case 'launchVideoPopup':
       launchVideoPiP(req.target || req.srcUrl, {
         screenId: req.screenId,
         left: req.left,
         top: req.top,
         forcePopup: req.forcePopup !== false,
         width: req.width,
-        height: req.height,
-      }).then(() => {
-        sendResponse({ success: true });
-      }).catch(err => {
-        sendResponse({ success: false, error: err?.message || String(err) });
-      });
+        height: req.height
+      })
+        .then(() => {
+          sendResponse({ success: true });
+        })
+        .catch((err) => {
+          sendResponse({ success: false, error: err?.message || String(err) });
+        });
       return true; // Keep channel open for async response
   }
   // Unhandled message — don't keep channel open
@@ -613,16 +679,17 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
 // PICKER MODE
 // ============================================================================
 function togglePickerMode() {
+  if (!document.body) return;
   State.isPickerActive = !State.isPickerActive;
 
   if (State.isPickerActive) {
     document.body.style.cursor = 'crosshair';
-    
+
     // Create and store listener references
     State.pickerListeners.mouseover = handlePickerHover;
     State.pickerListeners.click = handlePickerClick;
     State.pickerListeners.keydown = handlePickerKey;
-    
+
     document.addEventListener('mouseover', State.pickerListeners.mouseover, true);
     document.addEventListener('click', State.pickerListeners.click, true);
     document.addEventListener('keydown', State.pickerListeners.keydown, true);
@@ -657,7 +724,7 @@ function togglePickerMode() {
     showToast('Picker mode ON - Click any element', 'info', 2000);
   } else {
     document.body.style.cursor = '';
-    
+
     // Remove picker listeners
     if (State.pickerListeners.mouseover) {
       document.removeEventListener('mouseover', State.pickerListeners.mouseover, true);
@@ -686,8 +753,9 @@ function handlePickerHover(e) {
   const prev = document.querySelector(`.${CONFIG.PICKER_HIGHLIGHT_CLASS}`);
   if (prev) prev.classList.remove(CONFIG.PICKER_HIGHLIGHT_CLASS);
 
-  // Don't highlight FullPiP UI elements or null targets
-  if (!e.target) return;
+  // Don't highlight FullPiP UI elements or null/text targets (no closest/classList)
+  if (!e.target || typeof e.target.closest !== 'function') return;
+  if (typeof e.target.classList?.add !== 'function') return;
   if (!e.target.closest('.fullpip-toast, .fullpip-indicator')) {
     e.target.classList.add(CONFIG.PICKER_HIGHLIGHT_CLASS);
   }
@@ -699,6 +767,7 @@ function handlePickerClick(e) {
   togglePickerMode();
 
   const target = e.target;
+  if (!target || !target.tagName) return;
 
   // ✅ FIX: Detect if clicked element is a video and use appropriate handler
   if (target.tagName === 'VIDEO' || target.tagName === 'AUDIO') {
@@ -722,6 +791,10 @@ function handlePickerKey(e) {
 // ELEMENT PiP (Document PiP API)
 // ============================================================================
 async function launchElementPiP(sourceNode) {
+  if (!sourceNode || typeof sourceNode.getBoundingClientRect !== 'function') {
+    showToast('Invalid element selected', 'error');
+    return;
+  }
   if (!window.documentPictureInPicture) {
     showToast('Document PiP not supported in this browser', 'error');
     return;
@@ -731,17 +804,23 @@ async function launchElementPiP(sourceNode) {
   const settings = await CachedSettings.get([
     'maxPipWindows',
     'pipScaleMode',
-    'pipBackgroundColor',
+    'pipBackgroundColor'
   ]);
 
   // Check max windows limit (skip if unlimited)
-  const maxWindows = settings.maxPipWindows === 'unlimited' ? Infinity : (settings.maxPipWindows || CONFIG.MAX_PIP_WINDOWS);
+  const maxWindows =
+    settings.maxPipWindows === 'unlimited'
+      ? Infinity
+      : settings.maxPipWindows || CONFIG.MAX_PIP_WINDOWS;
   if (State.pipWindows.size >= maxWindows) {
-    showToast(`Maximum ${maxWindows === Infinity ? 'unlimited' : maxWindows} PiP windows allowed`, 'error');
+    showToast(
+      `Maximum ${maxWindows === Infinity ? 'unlimited' : maxWindows} PiP windows allowed`,
+      'error'
+    );
     return;
   }
 
-  if (sourceNode.classList.contains(CONFIG.PICKER_HIGHLIGHT_CLASS)) {
+  if (sourceNode.classList?.contains(CONFIG.PICKER_HIGHLIGHT_CLASS)) {
     sourceNode.classList.remove(CONFIG.PICKER_HIGHLIGHT_CLASS);
   }
 
@@ -790,20 +869,21 @@ async function launchElementPiP(sourceNode) {
     // Create close button
     const closeBtn = doc.createElement('button');
     closeBtn.className = 'fullpip-close-btn';
-    closeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+    closeBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
     closeBtn.title = 'Close PiP';
     closeBtn.onclick = () => {
       pipWindow.close();
     };
     doc.body.append(closeBtn);
-    
+
     // Clone and add the source element
     const clone = sourceNode.cloneNode(true);
     clone.style.position = 'static';
     clone.style.margin = '0';
     clone.dataset.pipId = pipId;
     doc.body.append(clone);
-    
+
     // Store window reference
     State.pipWindows.set(pipId, {
       window: pipWindow,
@@ -811,16 +891,15 @@ async function launchElementPiP(sourceNode) {
       type: 'element',
       createdAt: Date.now()
     });
-    
+
     // Cleanup on close
-    pipWindow.addEventListener("pagehide", () => {
+    pipWindow.addEventListener('pagehide', () => {
       cleanupPipState(pipId);
     });
-    
+
     showToast('PiP window opened', 'success', 1500);
-    
-  } catch (e) { 
-    console.error("[FullPiP] Element Picker Failed:", e);
+  } catch (e) {
+    console.error('[FullPiP] Element Picker Failed:', e);
     showToast('Failed to open PiP window', 'error');
   }
 }
@@ -867,10 +946,12 @@ async function launchVideoPiP(target, options = {}) {
         const normalizedCurrentSrc = normalizeUrl(v.currentSrc || '');
         const normalizedSrc = normalizeUrl(v.src || '');
 
-        if (normalizedCurrentSrc === normalizedTarget ||
-            normalizedSrc === normalizedTarget ||
-            v.currentSrc === target ||
-            v.src === target) {
+        if (
+          normalizedCurrentSrc === normalizedTarget ||
+          normalizedSrc === normalizedTarget ||
+          v.currentSrc === target ||
+          v.src === target
+        ) {
           video = v;
           break;
         }
@@ -1003,7 +1084,7 @@ async function launchVideoPiP(target, options = {}) {
       left,
       top,
       forcePopup: shouldForcePopup,
-      mode: mode, // Pass mode to factory for routing decision
+      mode: mode // Pass mode to factory for routing decision
     });
 
     console.debug('[FullPiP] PiPFactory result:', result);
@@ -1032,12 +1113,12 @@ async function launchImagePiP() {
     showToast('No element selected. Right-click an image first.', 'error');
     return;
   }
-  
+
   if (!window.documentPictureInPicture) {
     showToast('Document PiP not supported in this browser', 'error');
     return;
   }
-  
+
   // Check max windows limit - using cached settings for speed
   const settings = await CachedSettings.get([
     'maxPipWindows',
@@ -1053,21 +1134,25 @@ async function launchImagePiP() {
   // Check max windows limit (skip if unlimited)
   const maxWindows = settings.maxPipWindows === 'unlimited' ? Infinity : settings.maxPipWindows;
   if (State.pipWindows.size >= maxWindows) {
-    showToast(`Maximum ${maxWindows === Infinity ? 'unlimited' : maxWindows} PiP windows allowed`, 'error');
+    showToast(
+      `Maximum ${maxWindows === Infinity ? 'unlimited' : maxWindows} PiP windows allowed`,
+      'error'
+    );
     return;
   }
-  
+
   const rect = target.getBoundingClientRect();
   const pipId = generateId();
-  
+
   // Calculate initial size
   let nW = target.naturalWidth || target.width || 800;
   let nH = target.naturalHeight || target.height || 600;
   const sW = window.screen.availWidth;
   const sH = window.screen.availHeight;
-  
-  let finalW = 500, finalH = 500;
-  
+
+  let finalW = 500,
+    finalH = 500;
+
   switch (settings.pipInitialSize) {
     case 'visual':
       finalW = Math.max(CONFIG.MIN_WINDOW_WIDTH, rect.width);
@@ -1095,64 +1180,73 @@ async function launchImagePiP() {
       finalW = rect.width > 0 ? rect.width : 500;
       finalH = rect.height > 0 ? rect.height : 500;
   }
-  
+
   finalW = Math.max(CONFIG.MIN_WINDOW_WIDTH, Math.round(finalW));
   finalH = Math.max(CONFIG.MIN_WINDOW_HEIGHT, Math.round(finalH));
-  
+
   try {
     const pipWindow = await window.documentPictureInPicture.requestWindow({
       width: finalW,
       height: finalH
     });
-    
+
     const doc = pipWindow.document;
     setupPipStyles(doc, target, settings.pipBackgroundColor, settings.pipScaleMode);
-    
+
     // Create close button
     const closeBtn = doc.createElement('button');
     closeBtn.className = 'fullpip-close-btn';
-    closeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+    closeBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
     closeBtn.title = 'Close PiP (Esc)';
     closeBtn.onclick = () => pipWindow.close();
     doc.body.append(closeBtn);
-    
+
     let contentEl;
+    let captureStream = null;
     if (target.tagName === 'CANVAS') {
       contentEl = doc.createElement('video');
       contentEl.muted = true;
       contentEl.autoplay = true;
-      contentEl.srcObject = target.captureStream(60);
+      try {
+        captureStream = target.captureStream(60);
+      } catch (err) {
+        console.error('[FullPiP] captureStream failed:', err);
+        showToast('Failed to capture canvas stream', 'error');
+        return;
+      }
+      contentEl.srcObject = captureStream;
     } else {
       contentEl = doc.createElement('img');
       contentEl.src = target.src || extractBgImage(target);
       setupLiveSync(target, contentEl, pipId);
     }
-    
-    contentEl.id = "fullpip-live-content";
+
+    contentEl.id = 'fullpip-live-content';
     contentEl.dataset.pipId = pipId;
     doc.body.append(contentEl);
-    
+
     setupZoomAndPan(contentEl, settings, pipWindow, pipId);
-    
-    // Store window reference
+
+    // Store window reference (keep captureStream so tracks can be stopped on close)
     State.pipWindows.set(pipId, {
       window: pipWindow,
       sourceElement: target,
       contentElement: contentEl,
+      stream: captureStream,
       type: 'image',
       observer: State.observer,
       createdAt: Date.now()
     });
-    
+
     // Cleanup on close
-    pipWindow.addEventListener("pagehide", () => {
+    pipWindow.addEventListener('pagehide', () => {
       cleanupPipState(pipId);
     });
-    
+
     showToast('Image PiP opened', 'success', 1500);
-    
-  } catch (e) { 
-    console.error("[FullPiP] Image Engine Failed:", e);
+  } catch (e) {
+    console.error('[FullPiP] Image Engine Failed:', e);
     showToast('Failed to open image PiP', 'error');
   }
 }
@@ -1166,17 +1260,20 @@ function setupLiveSync(sourceNode, pipImgNode, pipId) {
     if (pipImgNode.src !== newSrc) {
       pipImgNode.src = newSrc;
       // Notify popup of change (with error handling)
-      sendSafeMessage({
-        action: "liveSyncUpdate",
-        pipId,
-        src: newSrc
-      }, 'Live sync notification');
+      sendSafeMessage(
+        {
+          action: 'liveSyncUpdate',
+          pipId,
+          src: newSrc
+        },
+        'Live sync notification'
+      );
     }
   }, CONFIG.DEBOUNCE_SYNC_MS);
 
   State.observer = new MutationObserver((mutations) => {
-    const relevant = mutations.some(m =>
-      m.type === 'attributes' && ['src', 'srcset', 'style'].includes(m.attributeName)
+    const relevant = mutations.some(
+      (m) => m.type === 'attributes' && ['src', 'srcset', 'style'].includes(m.attributeName)
     );
     if (relevant) syncLogic();
   });
@@ -1192,12 +1289,17 @@ function cleanupPipState(pipId) {
     pipData.observer.disconnect();
   }
 
+  // Stop captureStream tracks (canvas PiP) to avoid media leak
+  stopPipStreamTracks(pipData);
+
   // Clean up PiP window listeners (resize, keydown will be GC'd with window)
   if (pipData.window) {
     try {
       // The window is closing, so listeners will be garbage collected
       // No need to explicitly remove them
-    } catch (e) { /* Window already closed */ }
+    } catch (e) {
+      /* Window already closed */
+    }
   }
 
   State.pipWindows.delete(pipId);
@@ -1206,7 +1308,7 @@ function cleanupPipState(pipId) {
   if (State.pipWindows.size === 0) {
     if (State.observer) State.observer.disconnect();
     State.observer = null;
-    
+
     // Disconnect service worker port
     if (serviceWorkerPort) {
       serviceWorkerPort.disconnect();
@@ -1218,12 +1320,37 @@ function cleanupPipState(pipId) {
   }
 }
 
+// Stop all tracks of a stored captureStream and detach it from its element.
+// Prevents camera/canvas capture leaks after the PiP window closes.
+function stopPipStreamTracks(pipData) {
+  if (!pipData) return;
+  try {
+    if (pipData.contentElement) pipData.contentElement.srcObject = null;
+  } catch {
+    /* element already detached */
+  }
+  const stream = pipData.stream;
+  if (stream && typeof stream.getTracks === 'function') {
+    for (const track of stream.getTracks()) {
+      try {
+        track.stop();
+      } catch {
+        /* already stopped */
+      }
+    }
+  }
+  pipData.stream = null;
+}
+
 function closeAllPipWindows() {
   const count = State.pipWindows.size;
   for (const [pipId, pipData] of State.pipWindows.entries()) {
     try {
+      stopPipStreamTracks(pipData);
       pipData.window?.close();
-    } catch (e) { /* Window already closed */ }
+    } catch (e) {
+      /* Window already closed */
+    }
   }
   State.pipWindows.clear();
   if (State.observer) State.observer.disconnect();
@@ -1349,9 +1476,12 @@ function setupPipStyles(doc, sourceNode, bgSetting, scaleMode) {
 // ============================================================================
 function setupZoomAndPan(img, settings, pipWin, pipId) {
   let scale = 1;
-  let pX = 0, pY = 0;
-  let startX = 0, startY = 0;
-  let basePx = 0, basePy = 0;
+  let pX = 0,
+    pY = 0;
+  let startX = 0,
+    startY = 0;
+  let basePx = 0,
+    basePy = 0;
   let isDragging = false;
   let rafId = null;
 
@@ -1377,11 +1507,11 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
   };
 
   const doc = pipWin.document;
-  
+
   // Store keyboard listener for cleanup
   const keydownListener = (e) => {
     const step = CONFIG.PAN_STEP / scale;
-    switch(e.key) {
+    switch (e.key) {
       case 'Escape':
         pipWin.close();
         break;
@@ -1412,14 +1542,16 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
         }
         break;
       case CONFIG.ZOOM_RESET_KEY:
-        scale = 1; pX = 0; pY = 0;
+        scale = 1;
+        pX = 0;
+        pY = 0;
         break;
     }
 
     // ── Edge Resistance for pan arrows ──────────────────────────
     // When Edge Lock is ON, prevent panning at scale <= 1.0
     // (image fills window, there's nothing outside to pan to)
-    const isArrowKey = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key);
+    const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
     if (isArrowKey) {
       if (settings.pipEdgeLock && scale <= 1.0) {
         // Clamp pan to zero when at or below full fit
@@ -1430,7 +1562,7 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
     }
   };
   doc.addEventListener('keydown', keydownListener);
-  
+
   // Auto-hide cursor
   let cursorTimer;
   doc.addEventListener('mousemove', () => {
@@ -1440,39 +1572,42 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
       if (!isDragging) doc.body.style.cursor = 'none';
     }, 2000);
   });
-  
+
   // Zoom on scroll
-  img.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const speed = parseFloat(settings.pipZoomSpeed) || 1.0;
-    const safeFactor = e.deltaY > 0
-      ? Math.max(0.5, 1 - (0.1 * speed))
-      : Math.min(2, 1 + (0.1 * speed));
-    let newScale = scale * safeFactor;
+  img.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      const speed = parseFloat(settings.pipZoomSpeed) || 1.0;
+      const safeFactor =
+        e.deltaY > 0 ? Math.max(0.5, 1 - 0.1 * speed) : Math.min(2, 1 + 0.1 * speed);
+      let newScale = scale * safeFactor;
 
-    // ── Edge Resistance ────────────────────────────────────────────────
-    // When pipEdgeLock is ON, scale cannot go below 1.0.
-    // At scale=1 the image fills the window (full fit). Allowing scale<1
-    // would shrink the image and expose empty borders — edge lock prevents
-    // this. When OFF, allow free zoom down to 0.01.
-    if (settings.pipEdgeLock) {
-      newScale = Math.max(1.0, newScale);
-    } else if (settings.pipZoomSmartLimit) {
-      newScale = Math.max(CONFIG.ZOOM_MIN, newScale);
-    } else {
-      newScale = Math.max(0.01, newScale);
-    }
+      // ── Edge Resistance ────────────────────────────────────────────────
+      // When pipEdgeLock is ON, scale cannot go below 1.0.
+      // At scale=1 the image fills the window (full fit). Allowing scale<1
+      // would shrink the image and expose empty borders — edge lock prevents
+      // this. When OFF, allow free zoom down to 0.01.
+      if (settings.pipEdgeLock) {
+        newScale = Math.max(1.0, newScale);
+      } else if (settings.pipZoomSmartLimit) {
+        newScale = Math.max(CONFIG.ZOOM_MIN, newScale);
+      } else {
+        newScale = Math.max(0.01, newScale);
+      }
 
-    // Reset position when zoom returns to 1.0
-    if (newScale <= 1.001) {
-      pX = 0;
-      pY = 0;
-    }
-    
-    scale = newScale;
-    updateTransform();
-  }, { passive: false });
-  
+      // Reset position when zoom returns to 1.0
+      if (newScale <= 1.001) {
+        pX = 0;
+        pY = 0;
+      }
+
+      scale = newScale;
+      updateTransform();
+    },
+    { passive: false }
+  );
+
   // Drag to pan
   if (!settings.pipLockPan) {
     img.addEventListener('pointerdown', (e) => {
@@ -1488,14 +1623,14 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
       basePy = pY;
       img.style.cursor = 'grabbing';
     });
-    
+
     img.addEventListener('pointermove', (e) => {
       if (!isDragging) return;
       e.preventDefault();
-      const deltaX = (e.clientX - startX);
-      const deltaY = (e.clientY - startY);
-      let nextPx = basePx + (deltaX / scale);
-      let nextPy = basePy + (deltaY / scale);
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+      let nextPx = basePx + deltaX / scale;
+      let nextPy = basePy + deltaY / scale;
 
       // ── Edge Resistance during drag ─────────────────────────────
       // At scale=1: image fills the window, pan must be locked to 0
@@ -1521,7 +1656,7 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
       pY = nextPy;
       updateTransform();
     });
-    
+
     const stopDrag = (e) => {
       if (isDragging) {
         isDragging = false;
@@ -1529,17 +1664,19 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
         img.style.cursor = 'grab';
       }
     };
-    
+
     img.addEventListener('pointerup', stopDrag);
     img.addEventListener('pointercancel', stopDrag);
     img.style.cursor = 'grab';
   } else {
     img.style.cursor = 'default';
   }
-  
+
   // Double-click to reset
   img.addEventListener('dblclick', () => {
-    scale = 1; pX = 0; pY = 0; 
+    scale = 1;
+    pX = 0;
+    pY = 0;
     updateTransform();
     showToast('View reset', 'info', 1000);
   });
@@ -1551,7 +1688,7 @@ function setupZoomAndPan(img, settings, pipWin, pipId) {
 function extractBgImage(node) {
   const bg = getComputedStyle(node).backgroundImage;
   const match = bg.match(/url\(['"]?(.*?)['"]?\)/);
-  return match ? match[1] : "";
+  return match ? match[1] : '';
 }
 
 // ============================================================================
@@ -1588,7 +1725,7 @@ let autoPipInitialized = false; // Separate flag for auto-PiP
           // This ensures proper routing, deduplication, and multi-window support
           if (typeof PiPFactory !== 'undefined') {
             const result = await PiPFactory.create({
-              videoElement: v,
+              videoElement: v
             });
             if (result.success) {
               cleanupAutoListeners();
@@ -1609,7 +1746,7 @@ let autoPipInitialized = false; // Separate flag for auto-PiP
     };
 
     const cleanupAutoListeners = () => {
-      autoPipListeners.forEach(({evt, handler, opts}) => {
+      autoPipListeners.forEach(({ evt, handler, opts }) => {
         document.removeEventListener(evt, handler, opts);
       });
       autoPipListeners = [];
@@ -1617,7 +1754,7 @@ let autoPipInitialized = false; // Separate flag for auto-PiP
 
     // Store listener references for cleanup
     const events = ['click', 'keydown', 'scroll'];
-    events.forEach(evt => {
+    events.forEach((evt) => {
       const opts = { capture: true, passive: true };
       document.addEventListener(evt, attemptPip, opts);
       autoPipListeners.push({ evt, handler: attemptPip, opts });
@@ -1688,7 +1825,7 @@ function establishServiceWorkerConnection() {
 }
 
 // Notify background script that content script is ready (with error handling)
-sendSafeMessage({ action: "contentScriptReady" }, 'Content script ready handshake');
+sendSafeMessage({ action: 'contentScriptReady' }, 'Content script ready handshake');
 
 // Cleanup on page unload/navigation
 // This MUST be synchronous — async operations are unreliable during pagehide.
@@ -1698,12 +1835,16 @@ window.addEventListener('pagehide', () => {
 
   // 2. Close Document PiP window if open (synchronous)
   if (window.documentPictureInPicture?.window) {
-    try { window.documentPictureInPicture.window.close(); } catch {}
+    try {
+      window.documentPictureInPicture.window.close();
+    } catch {}
   }
 
   // 3. Exit standard video PiP if active (synchronous best-effort)
   if (document.pictureInPictureElement) {
-    try { document.exitPictureInPicture(); } catch {}
+    try {
+      document.exitPictureInPicture();
+    } catch {}
   }
 
   // 4. Clean up all event listeners
@@ -1716,7 +1857,9 @@ window.addEventListener('pagehide', () => {
   }
 
   // 6. Notify background (best-effort, may not complete)
-  try { chrome.runtime.sendMessage({ action: 'tabClosed' }); } catch {}
+  try {
+    chrome.runtime.sendMessage({ action: 'tabClosed' });
+  } catch {}
 });
 
 window.addEventListener('beforeunload', () => {
