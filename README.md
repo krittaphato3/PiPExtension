@@ -1,9 +1,8 @@
-
 # FullPiP — Picture-in-Picture
 
 [![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Available-blue?style=flat-square)](https://chrome.google.com/webstore)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
-[![Version](https://img.shields.io/badge/Version-1.1.0-orange?style=flat-square)](https://github.com/krittaphato3/PiPExtension/releases)
+[![Version](https://img.shields.io/badge/Version-1.1.1-orange?style=flat-square)](https://github.com/krittaphato3/PiPExtension/releases)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)](LICENSE)
 
 FullPiP is a comprehensive Chrome extension that provides advanced Picture-in-Picture (PiP) functionality with intelligent routing, multi-window support, and seamless media control across different video sources.
@@ -74,29 +73,29 @@ FullPiP offers three distinct operational modes that automatically adapt to your
 
 ### Basic Usage
 
-| Action | Method | Alternative |
-|--------|--------|-------------|
-| Open Video in PiP | Right-click video → FullPiP: Pop Video | Click PiP button in popup |
-| Toggle PiP | Press Alt + P | Click media item in popup |
-| Picker Mode | Right-click page → FullPiP: Picker Mode | Press Alt + K |
-| Multi-Monitor | Right-click video → monitor submenu | Use monitor settings |
-| Close All PiP | Press Alt + Shift + P | Use "Close All PiP" button |
+| Action            | Method                                  | Alternative                |
+| ----------------- | --------------------------------------- | -------------------------- |
+| Open Video in PiP | Right-click video → FullPiP: Pop Video  | Click PiP button in popup  |
+| Toggle PiP        | Press Alt + P                           | Click media item in popup  |
+| Picker Mode       | Right-click page → FullPiP: Picker Mode | Press Alt + K              |
+| Multi-Monitor     | Right-click video → monitor submenu     | Use monitor settings       |
+| Close All PiP     | Press Alt + Shift + P                   | Use "Close All PiP" button |
 
 ### Keyboard Shortcuts
 
-| Shortcut | Action | Context |
-|----------|--------|---------|
-| Alt + P | Toggle PiP for main video | Any webpage |
-| Alt + K | Toggle element picker mode | Any webpage |
-| Alt + Shift + P | Close all PiP windows | Any webpage |
-| + / - | Zoom in/out | Inside PiP window |
-| Arrow Keys | Pan content | When zoomed in PiP |
-| Double Click | Reset zoom and pan | Inside PiP window |
-| 0 | Reset to default view | Inside PiP window |
-| F | Cycle scale mode | Popup PiP windows |
-| M | Toggle audio mute | Popup PiP windows |
-| Space | Play/pause video | Popup PiP windows |
-| Escape | Close PiP window | Inside PiP window |
+| Shortcut        | Action                     | Context            |
+| --------------- | -------------------------- | ------------------ |
+| Alt + P         | Toggle PiP for main video  | Any webpage        |
+| Alt + K         | Toggle element picker mode | Any webpage        |
+| Alt + Shift + P | Close all PiP windows      | Any webpage        |
+| + / -           | Zoom in/out                | Inside PiP window  |
+| Arrow Keys      | Pan content                | When zoomed in PiP |
+| Double Click    | Reset zoom and pan         | Inside PiP window  |
+| 0               | Reset to default view      | Inside PiP window  |
+| F               | Cycle scale mode           | Popup PiP windows  |
+| M               | Toggle audio mute          | Popup PiP windows  |
+| Space           | Play/pause video           | Popup PiP windows  |
+| Escape          | Close PiP window           | Inside PiP window  |
 
 ### Advanced Controls
 
@@ -152,15 +151,15 @@ Choose from three operational modes in the extension settings:
 
 ### Core Components
 
-| Component | Technology | Responsibility |
-|-----------|------------|----------------|
-| manifest.json | JSON | Extension manifest (Manifest V3) |
-| background.js | Service Worker | Context menus, keyboard shortcuts, inter-process communication |
-| content.js | Content Script | DOM manipulation, media detection, PiP orchestration |
-| lib/pipFactory.js | ES6 Module | Hybrid PiP engine with intelligent routing and state management |
-| popup.html/.js | HTML/CSS/JS | Extension interface, settings management, media browser |
-| player.html/.js | HTML/CSS/JS | Borderless video player for popup PiP windows |
-| style.css | CSS | Responsive UI theming with dark/light mode support |
+| Component         | Technology     | Responsibility                                                  |
+| ----------------- | -------------- | --------------------------------------------------------------- |
+| manifest.json     | JSON           | Extension manifest (Manifest V3)                                |
+| background.js     | Service Worker | Context menus, keyboard shortcuts, inter-process communication  |
+| content.js        | Content Script | DOM manipulation, media detection, PiP orchestration            |
+| lib/pipFactory.js | ES6 Module     | Hybrid PiP engine with intelligent routing and state management |
+| popup.html/.js    | HTML/CSS/JS    | Extension interface, settings management, media browser         |
+| player.html/.js   | HTML/CSS/JS    | Borderless video player for popup PiP windows                   |
+| style.css         | CSS            | Responsive UI theming with dark/light mode support              |
 
 ### Data Flow Architecture
 
@@ -294,6 +293,13 @@ We welcome contributions from the community. Please follow these guidelines:
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
+
+### Version 1.1.1
+
+- Fix P0/P1/P2 bugs across background, content, popup, player, and pipFactory
+- Responsive popup UI improvements
+- Audio manager enhancements
+- CI workflow and pack script improvements
 
 ### Version 1.1.0
 

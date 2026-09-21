@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "FullPiP — Picture-in-Picture",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "krittaphato3",
   "description": "Smart multi-window PiP with mode selection. Right-click any video or press Alt+P.",
   "permissions": [
@@ -13,6 +13,8 @@
     "windows",
     "system.display"
   ],
+  "host_permissions": ["<all_urls>"],
+  "_note_host_permissions": "activeTab only grants the tab the user invoked the extension on; popup windows opened via chrome.windows.create are new tabs where activeTab does not apply, so scripting.executeScript CSS injection into those popup tabs requires host_permissions.",
   "background": {
     "service_worker": "background.js"
   },
@@ -52,8 +54,10 @@
       "description": "Close all FullPiP windows"
     }
   },
-  "web_accessible_resources": [{
-    "resources": ["player.html"],
-    "matches": ["<all_urls>"]
-  }]
+  "web_accessible_resources": [
+    {
+      "resources": ["player.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
