@@ -19,6 +19,8 @@ const KEYS = {
   HIGHLIGHT_ON_HOVER: 'highlightOnHover',
   AUTO_SCROLL_TO_MEDIA: 'autoScrollToMedia',
   CACHE_MEDIA_LIST: 'cacheMediaList',
+  INITIAL_SIZE: 'pipInitialSize',
+  FORCE_POPUP: 'forcePopup',
   AUDIO_MODE: 'audioMode'
 };
 
@@ -38,6 +40,8 @@ const DEFAULTS = {
   [KEYS.HIGHLIGHT_ON_HOVER]: true,
   [KEYS.AUTO_SCROLL_TO_MEDIA]: true,
   [KEYS.CACHE_MEDIA_LIST]: true,
+  [KEYS.INITIAL_SIZE]: 'visual',
+  [KEYS.FORCE_POPUP]: false,
   [KEYS.AUDIO_MODE]: 'mix'
 };
 
@@ -151,6 +155,7 @@ const els = {
     [KEYS.HIGHLIGHT_ON_HOVER]: document.getElementById('highlightOnHover'),
     [KEYS.AUTO_SCROLL_TO_MEDIA]: document.getElementById('autoScrollToMedia'),
     [KEYS.CACHE_MEDIA_LIST]: document.getElementById('cacheMediaList'),
+    [KEYS.INITIAL_SIZE]: document.getElementById('pipInitialSize'),
     [KEYS.AUDIO_MODE]: document.getElementById('audioMode')
   }
 };
@@ -250,6 +255,12 @@ function updateModeUI(mode) {
   }
 
   console.log(`[FullPiP] Mode set to: ${mode.toUpperCase()}`);
+  // Update footer mode text
+  const footerMode = document.getElementById('footerMode');
+  if (footerMode) {
+    const modeNames = { api: 'PiP API', popup: 'Popup Windows', hybrid: 'Hybrid PiP Engine' };
+    footerMode.textContent = modeNames[mode] || 'Hybrid PiP Engine';
+  }
 }
 
 // ============================================================================
@@ -800,7 +811,7 @@ function renderMediaList(mediaItems, container, tabId) {
     const thumbEl = document.createElement('div');
     thumbEl.className = thumbClass;
     if (media.thumbnail) {
-      thumbEl.style.backgroundImage = `url("${media.thumbnail}")`;
+      thumbEl.style.backgroundImage = `url("${CSS.escape(media.thumbnail)}")`;
     } else {
       thumbEl.style.background = 'var(--input-bg)';
       thumbEl.style.display = 'flex';
@@ -1264,6 +1275,15 @@ async function updatePipCount() {
     });
   }
 
+  // Show notification when notifications are disabled
+  if (els.inputs[KEYS.SHOW_NOTIFICATIONS]) {
+    els.inputs[KEYS.SHOW_NOTIFICATIONS].addEventListener('change', (e) => {
+      if (!e.target.checked) {
+        showToast('Notifications disabled. PiP actions will work silently.', 'info', 3000);
+      }
+    });
+  }
+
   // Theme toggle (a11y: keep aria-pressed in sync with light theme)
   els.themeBtn.addEventListener('click', () => {
     const isDark = els.body.getAttribute('data-theme') !== 'light';
@@ -1401,6 +1421,17 @@ async function updatePipCount() {
     !refreshDisplaysBtn
   ) {
     console.warn('[FullPiP] Multi-monitor UI elements missing');
+  }
+
+  // Force Popup checkbox persistence (from main; hotfix init lacks it)
+  if (forcePopupCheckbox) {
+    const forcePopupVal = items[KEYS.FORCE_POPUP];
+    if (forcePopupVal !== undefined) {
+      forcePopupCheckbox.checked = forcePopupVal;
+    }
+    forcePopupCheckbox.addEventListener('change', (e) => {
+      saveSetting(KEYS.FORCE_POPUP, e.target.checked);
+    });
   }
 
   let availableDisplays = [];

@@ -295,11 +295,42 @@ function ensureToastContainer() {
     gap: 8px;
     pointer-events: none;
   `;
+  // Inject toast animation keyframes if not already present
+  if (!document.getElementById('fullpip-toast-keyframes')) {
+    const kfStyle = document.createElement('style');
+    kfStyle.id = 'fullpip-toast-keyframes';
+    kfStyle.textContent = `
+      @keyframes fullpip-toast-slide {
+        from { opacity: 0; transform: translateX(20px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+    `;
+    document.head.appendChild(kfStyle);
+  }
+
   document.body.appendChild(State.toastContainer);
   return State.toastContainer;
 }
 
-function showToast(message, type = 'info', duration = CONFIG.TOAST_DURATION_MS) {
+async function showToast(message, type = 'info', duration = null) {
+  // Read toastDuration from settings if not explicitly provided
+  if (duration === null) {
+    try {
+      const settings = await CachedSettings.get(['toastDuration']);
+      duration = (settings.toastDuration || 2.5) * 1000; // Convert seconds to ms
+    } catch {
+      duration = CONFIG.TOAST_DURATION_MS;
+    }
+  }
+
+  // Respect showNotifications setting
+  try {
+    const notifSettings = await CachedSettings.get(['showNotifications']);
+    if (notifSettings.showNotifications === false) return;
+  } catch {
+    // If we can't read setting, show the toast (default behavior)
+  }
+
   // Throttle info toasts to reduce perceived delay
   const now = Date.now();
   if (type === 'info' && now - lastToastTime < TOAST_THROTTLE_MS) {
@@ -425,10 +456,13 @@ function cleanupEventListeners() {
 // ============================================================================
 async function handleRuntimeMessage(req, sender, sendResponse) {
   switch (req.action) {
-    case 'contextMenuTrigger':
-      req.type === 'video' ? launchVideoPiP(req.srcUrl) : launchImagePiP();
-      sendResponse({ success: true });
-      break;
+    case 'contextMenuTrigger': {
+      const launchAction = req.type === 'video' ? launchVideoPiP(req.srcUrl) : launchImagePiP();
+      launchAction
+        .then(() => sendResponse({ success: true }))
+        .catch(() => sendResponse({ success: false, error: 'Launch failed' }));
+      return true;
+    }
     case 'shortcutTrigger':
       // ✅ IMPROVED: Comprehensive PiP state detection and toggle logic
       // Check all possible PiP states: native video PiP, document PiP, popup PiP
@@ -553,22 +587,22 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
       const el = findMediaById(req.id);
       if (el) {
         if (req.command === 'pip') {
-          // Route through FullPiP engine to apply all settings (scale mode, zoom, etc.)
           if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') {
             launchVideoPiP(el)
-              .then(() => {
-                sendResponse({ success: true });
+              .then((result) => {
+                sendResponse({ success: result?.success ?? true });
               })
               .catch((err) => {
-                // Fallback: try native PiP if FullPiP fails
-                try {
-                  el.requestPictureInPicture();
-                } catch {}
-                sendResponse({ success: true });
+                el.requestPictureInPicture()
+                  .then(() => {
+                    sendResponse({ success: true });
+                  })
+                  .catch(() => {
+                    sendResponse({ success: false, error: 'PiP failed on both attempts' });
+                  });
               });
-            return true; // Async response
+            return true;
           } else {
-            // For images/other elements, use native Document PiP
             launchElementPiP(el)
               .then(() => {
                 sendResponse({ success: true });
@@ -576,7 +610,7 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
               .catch((err) => {
                 sendResponse({ success: false, error: err?.message || 'Failed' });
               });
-            return true; // Async response
+            return true;
           }
         } else if (req.command === 'togglePlay') {
           if (el.paused) {
@@ -638,10 +672,12 @@ async function handleRuntimeMessage(req, sender, sendResponse) {
 
     // ✅ FIX: Pause source video when popup opens
     case 'pauseSourceVideo':
-      const videoToPause = findMainVideo();
-      if (videoToPause && !videoToPause.paused) {
-        videoToPause.pause();
-        console.debug('[FullPiP] Paused source video for popup');
+      // Pause the video that's currently playing (most likely the source)
+      const allVids = getAllMediaDeep(document);
+      const playingVid = allVids.find((v) => v.tagName === 'VIDEO' && !v.paused);
+      if (playingVid) {
+        playingVid.pause();
+        console.debug('[FullPiP] Paused playing source video for popup');
       }
       sendResponse({ success: true });
       break;
@@ -926,8 +962,9 @@ async function launchVideoPiP(target, options = {}) {
     // ✅ FIX: Enhanced video URL matching for context menu
     // Try multiple matching strategies for better compatibility
 
-    // Strategy 1: Exact src attribute match (works for simple .mp4 files)
-    video = document.querySelector(`video[src="${target}"]`);
+    // Strategy 1: Exact src attribute match (safe — no CSS selector injection)
+    const allVideosForMatch = document.querySelectorAll('video');
+    video = Array.from(allVideosForMatch).find((v) => v.src === target || v.currentSrc === target);
 
     // Strategy 2: Match by currentSrc (handles blob URLs, encoded URLs, redirects)
     if (!video) {
@@ -1204,6 +1241,7 @@ async function launchImagePiP() {
 
     let contentEl;
     let captureStream = null;
+    let liveSyncObserver = null;
     if (target.tagName === 'CANVAS') {
       contentEl = doc.createElement('video');
       contentEl.muted = true;
@@ -1219,7 +1257,7 @@ async function launchImagePiP() {
     } else {
       contentEl = doc.createElement('img');
       contentEl.src = target.src || extractBgImage(target);
-      setupLiveSync(target, contentEl, pipId);
+      liveSyncObserver = setupLiveSync(target, contentEl, pipId);
     }
 
     contentEl.id = 'fullpip-live-content';
@@ -1235,7 +1273,7 @@ async function launchImagePiP() {
       contentElement: contentEl,
       stream: captureStream,
       type: 'image',
-      observer: State.observer,
+      observer: liveSyncObserver,
       createdAt: Date.now()
     });
 
@@ -1252,14 +1290,10 @@ async function launchImagePiP() {
 }
 
 function setupLiveSync(sourceNode, pipImgNode, pipId) {
-  // Disconnect previous observer
-  if (State.observer) State.observer.disconnect();
-
   const syncLogic = Debounce(() => {
     const newSrc = sourceNode.currentSrc || sourceNode.src || extractBgImage(sourceNode);
     if (pipImgNode.src !== newSrc) {
       pipImgNode.src = newSrc;
-      // Notify popup of change (with error handling)
       sendSafeMessage(
         {
           action: 'liveSyncUpdate',
@@ -1271,13 +1305,14 @@ function setupLiveSync(sourceNode, pipImgNode, pipId) {
     }
   }, CONFIG.DEBOUNCE_SYNC_MS);
 
-  State.observer = new MutationObserver((mutations) => {
+  const observer = new MutationObserver((mutations) => {
     const relevant = mutations.some(
       (m) => m.type === 'attributes' && ['src', 'srcset', 'style'].includes(m.attributeName)
     );
     if (relevant) syncLogic();
   });
-  State.observer.observe(sourceNode, { attributes: true });
+  observer.observe(sourceNode, { attributes: true });
+  return observer;
 }
 
 function cleanupPipState(pipId) {
@@ -1410,6 +1445,7 @@ function updateBackgroundStyle(bodyElement, bgSetting) {
 
   if (bgSetting === 'white') bgColor = '#ffffff';
   else if (bgSetting === 'black') bgColor = '#000000';
+  else if (bgSetting === 'auto') bgColor = 'transparent';
   else if (bgSetting === 'grid') {
     bgColor = '#e5e5e5';
     bgImage = `linear-gradient(45deg, #ccc 25%, transparent 25%),

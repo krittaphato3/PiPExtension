@@ -43,7 +43,8 @@ const state = {
   /** F2: set on manual M-key unmute so the user always wins over automation. */
   userUnmuteOverride: false,
   /** Cached popup windowId for reportAudible / muteOthers exemption checks. */
-  windowId: null
+  windowId: null,
+  isLoading: false
 };
 
 // F2: resolve this popup's windowId lazily (extension popup window).
@@ -143,6 +144,7 @@ function init() {
 // ============================================================================
 function loadVideo() {
   if (!state.videoUrl || state.videoUrl.startsWith('blob:')) return;
+  state.isLoading = true;
 
   // Reset state
   state.isLoaded = false;
@@ -186,16 +188,17 @@ async function attemptAutoplay() {
       await els.player.play();
       console.log('[FullPiP Player] Muted autoplay succeeded');
 
-      // Try to unmute after 1 second if user hasn't interacted
-      setTimeout(() => {
+      // Unmute only after user interaction (click or keypress)
+      const unmuteOnInteraction = () => {
         try {
           els.player.muted = false;
-          console.log('[FullPiP Player] Attempted to unmute');
-        } catch (e) {
-          // If unmute fails, stay muted
-          console.debug('[FullPiP Player] Could not unmute, staying muted');
-        }
-      }, 1000);
+          console.log('[FullPiP Player] Unmuted after user interaction');
+        } catch {}
+        document.removeEventListener('click', unmuteOnInteraction);
+        document.removeEventListener('keydown', unmuteOnInteraction);
+      };
+      document.addEventListener('click', unmuteOnInteraction, { once: true });
+      document.addEventListener('keydown', unmuteOnInteraction, { once: true });
     } catch (e2) {
       // Same transient-race guard as above: never treat AbortError as blocked.
       if (e2 && e2.name === 'AbortError') {
@@ -281,6 +284,7 @@ function retryLoad() {
 function setupPlayerListeners() {
   // Video is ready to play
   els.player.addEventListener('canplay', () => {
+    state.isLoading = false;
     if (!state.isLoaded) {
       state.isLoaded = true;
       setTimeout(() => hideLoader(), PLAYER_CONFIG.LOADER_HIDE_DELAY_MS);
@@ -412,7 +416,8 @@ function setupKeyboardListeners() {
 
 function setupRetryListener() {
   els.retryBtn.addEventListener('click', () => {
-    state.retryCount = 0; // Reset retry counter for manual retry
+    if (state.isLoading) return;
+    state.retryCount = 0;
     loadVideo();
   });
 }
@@ -472,6 +477,7 @@ function setupAudioManager() {
 // ERROR HANDLING
 // ============================================================================
 function handleVideoError() {
+  state.isLoading = false;
   // DRM_DETECTED: EME-bound playback fails with generic MediaErrors — detect
   // via MediaKeys and reuse the "source not supported" shape with a specific
   // message instead.
