@@ -97,15 +97,18 @@ body::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
 }
 
-/* Container — fluid, never cut off on right edge */
+/* Container — fluid, never cut off on right edge, compact density */
 .container {
   position: relative;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  padding: clamp(12px, 3.5vw, 16px);
+  padding: clamp(10px, 3vw, 14px);
   container-type: normal;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 3vw, 14px);
 }
 
 /* Utilities */
@@ -125,8 +128,9 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  padding-top: 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -139,9 +143,15 @@ header {
 .logo {
   color: var(--accent);
   background: var(--accent-glow);
-  padding: 6px;
+  padding: 3px;
+  width: 26px;
+  height: 26px;
+  box-sizing: border-box;
   border-radius: 8px;
   display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
   transition: transform 0.2s var(--ease);
 }
 .logo:hover {
@@ -149,7 +159,7 @@ header {
 }
 
 h1 {
-  font-size: var(--fs-title);
+  font-size: 13px;
   font-weight: 700;
   margin: 0;
   letter-spacing: -0.02em;
@@ -185,10 +195,11 @@ h1 {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-head);
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  /* popup-compact exception: 34px ok vs 44px page target */
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -311,12 +322,12 @@ h1 {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 0.625rem 0.875rem;
-  margin-bottom: 1rem;
+  padding: 8px 10px;
+  margin-bottom: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: var(--fs-desc);
+  gap: 8px;
+  font-size: 12px;
   line-height: 1.4;
   min-width: 0;
   transition: all 0.3s var(--ease);
@@ -350,12 +361,12 @@ h1 {
   font-weight: 500;
 }
 
-/* PiP Mode Badge (in status bar) */
+/* PiP Mode Badge (in status bar) — compact */
 .pip-mode-badge {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 1px 6px;
   border-radius: 10px;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -388,17 +399,17 @@ h1 {
 
 .pip-mode-select {
   font-weight: 600;
-  font-size: var(--fs-desc);
+  font-size: 12px;
   line-height: 1.4;
-  padding: 0.5rem 0.75rem;
+  padding: 6px 8px;
   flex: 0 1 150px;
   min-width: 0;
   max-width: 45%;
 }
 
 .mode-description {
-  margin-top: 0.625rem;
-  padding: 0.625rem 0.75rem;
+  margin-top: 8px;
+  padding: 8px 10px;
   background: var(--input-bg);
   border-radius: 6px;
   font-size: var(--fs-desc);
@@ -473,8 +484,8 @@ h1 {
   background-color: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: clamp(0.75rem, 3.5vw, 1rem);
-  margin-bottom: 0.75rem;
+  padding: 10px 12px;
+  margin-bottom: 0;
   box-shadow: var(--shadow);
   transition: all 0.2s var(--ease);
   box-sizing: border-box;
@@ -505,7 +516,7 @@ h1 {
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  padding: 0.25rem 0;
+  padding: 8px 0;
   min-width: 0;
 }
 
@@ -604,8 +615,8 @@ input:checked + .slider:hover {
   color: var(--text-head);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 0.375rem 0.625rem;
-  font-size: var(--fs-desc);
+  padding: 6px 8px;
+  font-size: 12px;
   line-height: 1.4;
   font-family: inherit;
   outline: none;
@@ -695,8 +706,8 @@ input:checked + .slider:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 1.25rem 0 0.75rem 0;
-  font-size: var(--fs-section);
+  margin: 12px 0 8px 0;
+  font-size: 10.5px;
   text-transform: uppercase;
   color: var(--text-sub);
   letter-spacing: 0.08em;
@@ -738,8 +749,8 @@ input:checked + .slider:hover {
 .media-list-container {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
+  gap: 6px;
+  margin-bottom: 0;
 }
 
 .loading-state,
@@ -785,12 +796,13 @@ input:checked + .slider:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px;
+  padding: 8px 10px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 10px;
   transition: all 0.2s var(--ease);
   cursor: pointer;
+  min-width: 0;
 }
 
 .media-item:hover {
@@ -800,15 +812,15 @@ input:checked + .slider:hover {
 }
 
 .media-thumb {
-  width: 80px;
-  height: 45px;
+  width: 64px;
+  height: 36px;
+  flex-shrink: 0;
   background-color: #000;
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;
   border-radius: 6px;
-  margin-right: 12px;
-  flex-shrink: 0;
+  margin-right: 10px;
   border: 1px solid var(--border);
   transition: all 0.2s var(--ease);
 }
@@ -826,24 +838,32 @@ input:checked + .slider:hover {
 .media-info {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  flex: 1;
   overflow: hidden;
-  margin-right: 10px;
-  flex-grow: 1;
+  margin-right: 8px;
 }
 
 .media-title {
   font-size: 12px;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.35;
   color: var(--text-head);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .media-meta {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-sub);
   margin-top: 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 
 .iframe-badge {
@@ -866,15 +886,17 @@ input:checked + .slider:hover {
   border: 1px solid var(--border);
   color: var(--text-head);
   border-radius: 6px;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  /* popup-compact exception: 30px ok vs 44px page target */
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
   display: flex;
   justify-content: center;
   align-items: center;
   cursor: pointer;
   transition: all 0.2s var(--ease);
+  flex-shrink: 0;
 }
 
 .btn-icon:hover {
@@ -998,8 +1020,8 @@ footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 20px;
-  padding-top: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid var(--border);
   font-size: 11px;
   color: var(--text-sub);
@@ -1044,10 +1066,11 @@ footer {
   cursor: pointer;
   opacity: 0.7;
   transition: 0.2s var(--ease);
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  /* popup-compact exception: 34px ok vs 44px page target */
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -1271,12 +1294,12 @@ ul.shortcuts-card .info-row {
    V4.0.0 — SIMPLIFIED UI
    ============================================================================ */
 
-/* Quick Action Buttons — 2-col grid, no wrap/cramp */
+/* Quick Action Buttons — always 2-col grid down to 300px, no wrap/cramp */
 .quick-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  padding: 0.625rem 0.75rem;
+  gap: 6px;
+  padding: 10px 12px;
   background: var(--bg-card);
   border-color: var(--accent);
 }
@@ -1289,13 +1312,13 @@ ul.shortcuts-card .info-row {
   background: var(--input-bg);
   border: 1px solid var(--border);
   color: var(--text-head);
-  padding: 0.625rem 0.75rem;
-  /* popup exception: 40px compact ok vs 44px page target */
-  min-height: 40px;
+  padding: 6px 8px;
+  /* popup-compact exception: 34px ok vs 44px page target — saves ~60px stacked height */
+  min-height: 34px;
   min-width: 0;
   max-width: 100%;
   border-radius: 8px;
-  font-size: var(--fs-desc);
+  font-size: 12px;
   line-height: 1.35;
   font-weight: 500;
   cursor: pointer;
@@ -1308,6 +1331,8 @@ ul.shortcuts-card .info-row {
 
 .action-btn svg {
   flex-shrink: 0;
+  width: 14px;
+  height: 14px;
 }
 
 .action-btn .btn-label {
@@ -1331,7 +1356,7 @@ ul.shortcuts-card .info-row {
 
 /* Collapsible Settings Sections */
 .settings-section {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .settings-section summary {
@@ -1348,8 +1373,8 @@ ul.shortcuts-card .info-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0.625rem 0;
-  font-size: var(--fs-section);
+  padding: 8px 0;
+  font-size: 10.5px;
   text-transform: uppercase;
   color: var(--text-sub);
   letter-spacing: 0.08em;
@@ -1377,13 +1402,13 @@ ul.shortcuts-card .info-row {
 
 /* Sub-section headings */
 .settings-sub {
-  font-size: var(--fs-section);
+  font-size: 10.5px;
   text-transform: uppercase;
   color: var(--text-sub);
   letter-spacing: 0.08em;
   font-weight: 700;
   line-height: 1.4;
-  margin: 1rem 0 0.5rem 0;
+  margin: 12px 0 6px 0;
   padding-left: 0.25rem;
 }
 
@@ -1418,7 +1443,7 @@ ul.shortcuts-card .info-row {
    ADAPTIVE COMPACT POPUP — 300/360/420px
    ============================================================================ */
 
-/* Narrow: <=360px — px step (Chrome popup ignores vw), stack actions, wrap Engine Mode */
+/* Narrow: <=360px — px step (Chrome popup ignores vw), wrap Engine Mode */
 @media (max-width: 360px) {
   body {
     width: 320px;
@@ -1433,10 +1458,6 @@ ul.shortcuts-card .info-row {
     padding: 12px;
   }
 
-  .quick-actions {
-    grid-template-columns: 1fr;
-  }
-
   .setting-item--wrap {
     flex-direction: column;
     align-items: stretch;
@@ -1449,7 +1470,14 @@ ul.shortcuts-card .info-row {
   }
 
   .card {
-    padding: 0.75rem;
+    padding: 10px 12px;
+  }
+}
+
+/* Ultra-narrow: below 300px only — stack quick actions */
+@media (max-width: 299px) {
+  .quick-actions {
+    grid-template-columns: 1fr;
   }
 }
 
