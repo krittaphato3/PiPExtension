@@ -7,18 +7,32 @@
 // ============================================================
 // Test Runner
 // ============================================================
-let passed = 0, failed = 0, total = 0;
+let passed = 0,
+  failed = 0,
+  total = 0;
 
 function assert(condition, name) {
   total++;
-  if (condition) { passed++; console.log(`  ✅ ${name}`); }
-  else { failed++; console.error(`  ❌ ${name}`); }
+  if (condition) {
+    passed++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    failed++;
+    console.error(`  ❌ ${name}`);
+  }
 }
 
 function assertEq(actual, expected, name) {
   total++;
-  if (actual === expected) { passed++; console.log(`  ✅ ${name}`); }
-  else { failed++; console.error(`  ❌ ${name} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`); }
+  if (actual === expected) {
+    passed++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    failed++;
+    console.error(
+      `  ❌ ${name} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
+    );
+  }
 }
 
 async function group(name, tests) {
@@ -45,7 +59,7 @@ const KEYS = {
   TOAST_DURATION: 'toastDuration',
   HIGHLIGHT_ON_HOVER: 'highlightOnHover',
   AUTO_SCROLL_TO_MEDIA: 'autoScrollToMedia',
-  CACHE_MEDIA_LIST: 'cacheMediaList',
+  CACHE_MEDIA_LIST: 'cacheMediaList'
 };
 
 const DEFAULTS = {
@@ -63,13 +77,13 @@ const DEFAULTS = {
   [KEYS.TOAST_DURATION]: 2.5,
   [KEYS.HIGHLIGHT_ON_HOVER]: true,
   [KEYS.AUTO_SCROLL_TO_MEDIA]: true,
-  [KEYS.CACHE_MEDIA_LIST]: true,
+  [KEYS.CACHE_MEDIA_LIST]: true
 };
 
 const MODE_DESCRIPTIONS = {
   api: '<strong>PiP API Mode:</strong>',
   popup: '<strong>Popup Mode:</strong>',
-  hybrid: '<strong>Hybrid Mode:</strong>',
+  hybrid: '<strong>Hybrid Mode:</strong>'
 };
 
 // formatTime (from popup.js)
@@ -77,7 +91,9 @@ function formatTime(seconds) {
   if (!seconds) return '0:00';
   if (seconds === Infinity) return 'Live';
   const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+  const s = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, '0');
   return `${m}:${s}`;
 }
 

@@ -7,18 +7,32 @@
 // ============================================================
 // Test Runner
 // ============================================================
-let passed = 0, failed = 0, total = 0;
+let passed = 0,
+  failed = 0,
+  total = 0;
 
 function assert(condition, name) {
   total++;
-  if (condition) { passed++; console.log(`  ✅ ${name}`); }
-  else { failed++; console.error(`  ❌ ${name}`); }
+  if (condition) {
+    passed++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    failed++;
+    console.error(`  ❌ ${name}`);
+  }
 }
 
 function assertEq(actual, expected, name) {
   total++;
-  if (actual === expected) { passed++; console.log(`  ✅ ${name}`); }
-  else { failed++; console.error(`  ❌ ${name} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`); }
+  if (actual === expected) {
+    passed++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    failed++;
+    console.error(
+      `  ❌ ${name} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
+    );
+  }
 }
 
 async function group(name, tests) {
@@ -62,7 +76,9 @@ function formatTime(seconds) {
   if (!seconds) return '0:00';
   if (seconds === Infinity) return 'Live';
   const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+  const s = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, '0');
   return `${m}:${s}`;
 }
 
@@ -77,25 +93,31 @@ function formatTime(seconds) {
   await group('Debounce', [
     () => {
       let called = false;
-      const fn = Debounce(() => { called = true; }, 10);
+      const fn = Debounce(() => {
+        called = true;
+      }, 10);
       fn();
       assert(!called, 'not called immediately');
     },
     async () => {
       let value = 0;
-      const fn = Debounce((v) => { value = v; }, 10);
+      const fn = Debounce((v) => {
+        value = v;
+      }, 10);
       fn(1);
       fn(2);
       fn(3);
-      await new Promise(r => setTimeout(r, 30));
+      await new Promise((r) => setTimeout(r, 30));
       assertEq(value, 3, 'only last call executed');
     },
     async () => {
       let count = 0;
-      const fn = Debounce(() => { count++; }, 10);
+      const fn = Debounce(() => {
+        count++;
+      }, 10);
       fn();
       fn();
-      await new Promise(r => setTimeout(r, 25));
+      await new Promise((r) => setTimeout(r, 25));
       assertEq(count, 1, 'single execution after settle');
     }
   ]);
@@ -163,18 +185,10 @@ function formatTime(seconds) {
       );
     },
     () => {
-      assertEq(
-        extractBgImage({ backgroundImage: 'none' }),
-        '',
-        'returns empty for no background'
-      );
+      assertEq(extractBgImage({ backgroundImage: 'none' }), '', 'returns empty for no background');
     },
     () => {
-      assertEq(
-        extractBgImage({ backgroundImage: '' }),
-        '',
-        'returns empty for empty string'
-      );
+      assertEq(extractBgImage({ backgroundImage: '' }), '', 'returns empty for empty string');
     }
   ]);
 

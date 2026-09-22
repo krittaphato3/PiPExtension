@@ -7,18 +7,32 @@
 // ============================================================
 // Test Runner
 // ============================================================
-let passed = 0, failed = 0, total = 0;
+let passed = 0,
+  failed = 0,
+  total = 0;
 
 function assert(condition, name) {
   total++;
-  if (condition) { passed++; console.log(`  ✅ ${name}`); }
-  else { failed++; console.error(`  ❌ ${name}`); }
+  if (condition) {
+    passed++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    failed++;
+    console.error(`  ❌ ${name}`);
+  }
 }
 
 function assertEq(actual, expected, name) {
   total++;
-  if (actual === expected) { passed++; console.log(`  ✅ ${name}`); }
-  else { failed++; console.error(`  ❌ ${name} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`); }
+  if (actual === expected) {
+    passed++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    failed++;
+    console.error(
+      `  ❌ ${name} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
+    );
+  }
 }
 
 async function group(name, tests) {
@@ -32,15 +46,27 @@ async function group(name, tests) {
 const PLAYER_CONFIG = {
   MAX_RETRIES: 2,
   RETRY_DELAY_MS: 1000,
-  LOADER_HIDE_DELAY_MS: 500,
+  LOADER_HIDE_DELAY_MS: 500
 };
 
 // Error code mapping (from player.js handleVideoError)
 const errorMessages = {
-  1: { title: 'Loading aborted', message: 'The loading process was interrupted by a user action or navigation.' },
-  2: { title: 'Network error', message: 'A network error occurred while trying to load the video. Check your connection.' },
-  3: { title: 'Decode error', message: 'The video format is not supported or the file is corrupted.' },
-  4: { title: 'Source not supported', message: 'The video source is unavailable, has been removed, or is blocked by CORS policy.' },
+  1: {
+    title: 'Loading aborted',
+    message: 'The loading process was interrupted by a user action or navigation.'
+  },
+  2: {
+    title: 'Network error',
+    message: 'A network error occurred while trying to load the video. Check your connection.'
+  },
+  3: {
+    title: 'Decode error',
+    message: 'The video format is not supported or the file is corrupted.'
+  },
+  4: {
+    title: 'Source not supported',
+    message: 'The video source is unavailable, has been removed, or is blocked by CORS policy.'
+  }
 };
 
 // ============================================================
