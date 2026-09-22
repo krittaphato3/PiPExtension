@@ -719,8 +719,12 @@ function resolveSinglePopupWindowId(factory, msg, sender) {
       }
       return null;
     }
-    const senderTabId = sender && sender.tab && typeof sender.tab.id === 'number' ? sender.tab.id : null;
-    const hasIds = msgWindowId !== null || (typeof msg.pipId === 'string' && msg.pipId) || (typeof msg.sourceId === 'string' && msg.sourceId);
+    const senderTabId =
+      sender && sender.tab && typeof sender.tab.id === 'number' ? sender.tab.id : null;
+    const hasIds =
+      msgWindowId !== null ||
+      (typeof msg.pipId === 'string' && msg.pipId) ||
+      (typeof msg.sourceId === 'string' && msg.sourceId);
     if (!hasIds) {
       if (senderTabId !== null) {
         const fromTab = entries.filter((entry) => entry[1] && entry[1].sourceTabId === senderTabId);
@@ -851,7 +855,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (closed) {
           sendResponse({ ok: true, success: true, windowId: targetWindowId, closed: true });
         } else {
-          sendResponse({ ok: false, success: false, code: 'CLOSE_FAILED', windowId: targetWindowId });
+          sendResponse({
+            ok: false,
+            success: false,
+            code: 'CLOSE_FAILED',
+            windowId: targetWindowId
+          });
         }
       } catch (err) {
         try {
