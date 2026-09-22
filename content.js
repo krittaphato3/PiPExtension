@@ -452,133 +452,314 @@ function cleanupEventListeners() {
 }
 
 // ============================================================================
+// PER-VIDEO PiP HELPERS (Alt+P toggle; never close-all)
+// ============================================================================
+// Mirror of PiPFactory._getSourceId: currentSrc || src || dom-fallback.
+// Prefers the factory implementation when loaded so both sides agree.
+function getVideoSourceId(video) {
+  try {
+    if (typeof PiPFactory !== 'undefined' && typeof PiPFactory._getSourceId === 'function') {
+      return PiPFactory._getSourceId(video) || '';
+    }
+  } catch {
+    /* fall through to local logic */
+  }
+  if (!video) return '';
+  const src = video.currentSrc || video.src || '';
+  if (src) return src;
+  return `dom-${video.dataset?.pipId || 'main'}`;
+}
+
+// URL equality that also matches player-proxy wrappers
+// (player.html?src=<encodeURIComponent(url)>).
+function pipUrlMatches(storedUrl, sourceId) {
+  if (!storedUrl || !sourceId) return false;
+  if (storedUrl === sourceId) return true;
+  try {
+    if (
+      storedUrl.includes(sourceId) ||
+      sourceId.includes(storedUrl) ||
+      storedUrl.includes(encodeURIComponent(sourceId)) ||
+      sourceId.includes(encodeURIComponent(storedUrl))
+    ) {
+      return true;
+    }
+  } catch {
+    if (storedUrl.includes(sourceId) || sourceId.includes(storedUrl)) return true;
+  }
+  return false;
+}
+
+// Close ONLY the given video's PiP (native, document, and/or popup).
+// Never touches other videos: no closeAllPipWindows(), no closeAllPip fan-out.
+async function closeOneVideoPip(mainVideo, mainSourceId) {
+  if (!mainVideo) return { closed: false, method: null };
+  const sourceId = mainSourceId || getVideoSourceId(mainVideo);
+
+  // ── Detect: is THIS video PiP'd? ──────────────────────────────────────
+  const docPipWindow =
+    typeof window !== 'undefined' ? window.documentPictureInPicture?.window || null : null;
+
+  const isNativeThis =
+    typeof document !== 'undefined' && document.pictureInPictureElement === mainVideo;
+
+  let docPipId = null;
+  if (docPipWindow) {
+    for (const [pipId, pipData] of State.pipWindows.entries()) {
+      if (
+        pipData &&
+        (pipData.sourceElement === mainVideo ||
+          pipData.sourceNode === mainVideo ||
+          pipData.videoElement === mainVideo)
+      ) {
+        docPipId = pipId;
+        break;
+      }
+    }
+  }
+  const isDocThis = docPipId !== null;
+
+  let popupPipId = null;
+  for (const [pipId, pipData] of State.pipWindows.entries()) {
+    if (pipId === docPipId) continue;
+    if (
+      pipData &&
+      (pipData.sourceElement === mainVideo ||
+        pipData.sourceNode === mainVideo ||
+        pipData.videoElement === mainVideo ||
+        (sourceId !== '' && pipData.sourceId === sourceId))
+    ) {
+      popupPipId = pipId;
+      break;
+    }
+  }
+
+  let factoryTracked = false;
+  try {
+    factoryTracked =
+      typeof PiPFactory !== 'undefined' &&
+      !!PiPFactory._activeSources &&
+      typeof PiPFactory._activeSources.has === 'function' &&
+      sourceId !== '' &&
+      PiPFactory._activeSources.has(sourceId);
+  } catch {
+    factoryTracked = false;
+  }
+
+  let matchedWindowId = null;
+  try {
+    if (
+      typeof PiPFactory !== 'undefined' &&
+      PiPFactory._popupWindowSources &&
+      typeof PiPFactory._popupWindowSources.entries === 'function' &&
+      sourceId !== ''
+    ) {
+      for (const [windowId, sid] of PiPFactory._popupWindowSources.entries()) {
+        if (sid === sourceId) {
+          matchedWindowId = windowId;
+          break;
+        }
+      }
+    }
+  } catch {
+    /* ignore lookup failures */
+  }
+
+  // Background popup list (when exposed by getPipState): match by sourceId/videoUrl.
+  try {
+    const pipState = await chrome.runtime.sendMessage({ action: 'getPipState' });
+    const rawList = pipState?.popupWindows ?? pipState?.popups ?? null;
+    if (Array.isArray(rawList)) {
+      for (const entry of rawList) {
+        if (
+          entry &&
+          ((sourceId !== '' && entry.sourceId === sourceId) ||
+            pipUrlMatches(entry.videoUrl, sourceId) ||
+            pipUrlMatches(entry.url, sourceId) ||
+            pipUrlMatches(entry.srcUrl, sourceId))
+        ) {
+          const entryWindowId = entry.windowId ?? entry.id ?? null;
+          if (entryWindowId !== null && entryWindowId !== undefined) {
+            matchedWindowId = entryWindowId;
+          }
+          break;
+        }
+      }
+    }
+  } catch {
+    console.debug('[FullPiP] Background unavailable for per-video popup check');
+  }
+
+  const isPopupThis =
+    popupPipId !== null ||
+    matchedWindowId !== null ||
+    (factoryTracked && !isNativeThis && !isDocThis);
+
+  if (!isNativeThis && !isDocThis && !isPopupThis) {
+    return { closed: false, method: null };
+  }
+
+  // ── Close: just this video ────────────────────────────────────────────
+  const methods = [];
+
+  if (isNativeThis) {
+    try {
+      await document.exitPictureInPicture();
+      methods.push('native');
+    } catch (e) {
+      console.warn('[FullPiP] Failed to exit PiP for this video:', e?.message || e);
+    }
+  }
+
+  if (isDocThis && docPipId !== null) {
+    const pipData = State.pipWindows.get(docPipId);
+    try {
+      if (pipData?.window?.close) pipData.window.close();
+      methods.push('document');
+    } catch (e) {
+      console.warn('[FullPiP] Failed to close document PiP for this video:', e?.message || e);
+    }
+    try {
+      cleanupPipState(docPipId);
+    } catch {
+      /* entry already cleaned */
+    }
+  }
+
+  if (isPopupThis) {
+    // Prefer the existing per-window background path when the id is known.
+    if (matchedWindowId !== null) {
+      try {
+        await chrome.runtime.sendMessage({ action: 'closePopupPip', windowId: matchedWindowId });
+      } catch (e) {
+        console.warn('[FullPiP] Failed to close popup window:', e?.message || e);
+      }
+      try {
+        if (
+          typeof PiPFactory !== 'undefined' &&
+          PiPFactory._popupWindowSources &&
+          typeof PiPFactory._popupWindowSources.delete === 'function'
+        ) {
+          PiPFactory._popupWindowSources.delete(matchedWindowId);
+        }
+      } catch {
+        /* ignore cleanup failures */
+      }
+    }
+    // Per-source close request (plus known ids) — background closes only this video.
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'closePopup',
+        sourceId,
+        ...(matchedWindowId !== null ? { windowId: matchedWindowId } : {}),
+        ...(popupPipId !== null ? { pipId: popupPipId } : {})
+      });
+    } catch (e) {
+      console.debug('[FullPiP] Per-source popup close unavailable:', e?.message || e);
+    }
+    if (popupPipId !== null && State.pipWindows.has(popupPipId)) {
+      const pipData = State.pipWindows.get(popupPipId);
+      try {
+        if (pipData?.window?.close) pipData.window.close();
+      } catch {
+        /* window already closed */
+      }
+      try {
+        cleanupPipState(popupPipId);
+      } catch {
+        /* entry already cleaned */
+      }
+    }
+    try {
+      if (typeof PiPFactory !== 'undefined' && typeof PiPFactory._unregisterSource === 'function') {
+        PiPFactory._unregisterSource(sourceId);
+      }
+    } catch {
+      /* ignore cleanup failures */
+    }
+    methods.push('popup');
+  }
+
+  return { closed: methods.length > 0, method: methods.join('+') || null };
+}
+
+// ============================================================================
 // MESSAGE HANDLER
 // ============================================================================
 async function handleRuntimeMessage(req, sender, sendResponse) {
   switch (req.action) {
     case 'contextMenuTrigger': {
+      // Menu Pop Video = open-new; menu Close = close-one for this video only.
+      if (req.type === 'close') {
+        let target = null;
+        if (req.srcUrl) {
+          const all = Array.from(document.querySelectorAll('video'));
+          target = all.find((v) => v.src === req.srcUrl || v.currentSrc === req.srcUrl) || null;
+        }
+        if (!target) target = findMainVideo();
+        if (!target) {
+          showToast('No video found on page', 'error');
+          sendResponse({ success: false, error: 'No video' });
+          return true;
+        }
+        closeOneVideoPip(target, getVideoSourceId(target))
+          .then((result) => {
+            if (result?.closed) {
+              showToast('Closed PiP window', 'success', 1500);
+              sendResponse({ success: true, action: 'closed' });
+            } else {
+              sendResponse({ success: false, error: 'This video is not in PiP' });
+            }
+          })
+          .catch(() => sendResponse({ success: false, error: 'Close failed' }));
+        return true;
+      }
       const launchAction = req.type === 'video' ? launchVideoPiP(req.srcUrl) : launchImagePiP();
       launchAction
         .then(() => sendResponse({ success: true }))
         .catch(() => sendResponse({ success: false, error: 'Launch failed' }));
       return true;
     }
-    case 'shortcutTrigger':
-      // ✅ IMPROVED: Comprehensive PiP state detection and toggle logic
-      // Check all possible PiP states: native video PiP, document PiP, popup PiP
+    case 'shortcutTrigger': {
+      // PER-VIDEO toggle (Alt+P): only this tab's main video toggles.
+      // First video -> native PiP, later videos -> popup windows (factory routing).
+      // Never close-all here; Alt+Shift+P ('closeAllPip') owns the fan-out path.
+      const mainVideo = findMainVideo();
+      if (!mainVideo) {
+        showToast('No video found on page', 'error');
+        sendResponse({ success: false, error: 'No video' });
+        return true;
+      }
+      const mainSourceId = getVideoSourceId(mainVideo);
 
-      // Check for standard video PiP (video.requestPictureInPicture)
-      const hasVideoPip = typeof document !== 'undefined' && document.pictureInPictureElement;
-
-      // Check for document PiP (documentPictureInPicture.requestWindow)
-      const hasDocPip = typeof window !== 'undefined' && window.documentPictureInPicture?.window;
-
-      // Check for any native PiP (standard or document)
-      const hasNativePip = hasVideoPip || hasDocPip;
-
-      // Check for popup PiP windows (both local and background-tracked)
-      const localPopupCount = State.pipWindows.size;
-      let backgroundPopupCount = 0;
-      let pipState = null;
+      let closeResult = null;
       try {
-        pipState = await chrome.runtime.sendMessage({ action: 'getPipState' });
-        backgroundPopupCount = pipState?.popupCount || 0;
+        closeResult = await closeOneVideoPip(mainVideo, mainSourceId);
       } catch (e) {
-        // Background not available, fallback to local only
-        console.debug('[FullPiP] Background unavailable for PiP state check');
+        console.warn('[FullPiP] Per-video PiP close check failed:', e?.message || e);
       }
-      const hasPopupPip = localPopupCount > 0 || backgroundPopupCount > 0;
 
-      // Also check if any native PiP is open cross-tab (from state manager)
-      const hasCrossTabNativePip = pipState?.isOpen || false;
-
-      const totalPipCount =
-        (hasNativePip ? 1 : 0) +
-        (hasCrossTabNativePip && !hasNativePip ? 1 : 0) +
-        localPopupCount +
-        backgroundPopupCount;
-
-      console.debug('[FullPiP] Alt+P toggle check:', {
-        hasVideoPip,
-        hasDocPip,
-        hasNativePip,
-        hasCrossTabNativePip,
-        localPopupCount,
-        backgroundPopupCount,
-        hasPopupPip,
-        totalPipCount
-      });
-
-      if (totalPipCount > 0) {
-        // PiP is open → close ALL PiP windows
-        console.debug('[FullPiP] Alt+P toggle: PiP detected, closing all');
-
-        // Close standard video PiP
-        if (hasVideoPip) {
-          try {
-            await document.exitPictureInPicture();
-            console.debug('[FullPiP] Closed standard video PiP');
-          } catch (e) {
-            console.warn('[FullPiP] Failed to exit standard PiP:', e.message);
-          }
-        }
-
-        // Close document PiP window
-        if (hasDocPip) {
-          try {
-            window.documentPictureInPicture.window.close();
-            console.debug('[FullPiP] Closed document PiP window');
-          } catch (e) {
-            console.warn('[FullPiP] Failed to close document PiP:', e.message);
-          }
-        }
-
-        // Close local popup PiP windows
-        closeAllPipWindows();
-
-        // Close background-tracked popup PiP windows and any cross-tab native PiP
-        try {
-          const closeResult = await chrome.runtime.sendMessage({ action: 'closeAllPip' });
-          console.debug('[FullPiP] Background close result:', closeResult);
-        } catch (e) {
-          console.warn('[FullPiP] Failed to close background PiP:', e.message);
-        }
-
-        showToast(
-          `Closed ${totalPipCount} PiP window${totalPipCount > 1 ? 's' : ''}`,
-          'success',
-          1500
-        );
-        sendResponse({ success: true, action: 'closed', count: totalPipCount });
-      } else {
-        // No PiP → open for main video
-        console.debug('[FullPiP] Alt+P toggle: No PiP found, opening new one');
-
-        const mainVideo = findMainVideo();
-        if (mainVideo) {
-          try {
-            await launchVideoPiP(mainVideo);
-            sendResponse({ success: true, type: 'video', action: 'opened' });
-          } catch (e) {
-            console.warn('[FullPiP] Failed to open video PiP:', e);
-            showToast('Failed to open video PiP', 'error');
-            sendResponse({ success: false, error: 'Video PiP failed' });
-          }
-        } else if (State.lastRightClickTarget) {
-          try {
-            await launchImagePiP();
-            sendResponse({ success: true, type: 'image', action: 'opened' });
-          } catch (e) {
-            console.warn('[FullPiP] Failed to open image PiP:', e);
-            showToast('Failed to open image PiP', 'error');
-            sendResponse({ success: false, error: 'Image PiP failed' });
-          }
-        } else {
-          showToast('No media found on page', 'error');
-          sendResponse({ success: false, error: 'No media' });
-        }
+      if (closeResult?.closed) {
+        console.debug('[FullPiP] Alt+P toggle: closed PiP for this video only', {
+          method: closeResult.method
+        });
+        showToast('Closed PiP window', 'success', 1500);
+        sendResponse({ success: true, action: 'closed' });
+        return true;
       }
-      return true; // Keep channel open: getPipState/closeAllPip/launchVideoPiP complete async before sendResponse
+
+      // This video is not PiP'd -> open it (factory decides native-vs-popup).
+      console.debug('[FullPiP] Alt+P toggle: this video not in PiP, opening');
+      try {
+        await launchVideoPiP(mainVideo);
+        sendResponse({ success: true, type: 'video', action: 'opened' });
+      } catch (e) {
+        console.warn('[FullPiP] Failed to open video PiP:', e);
+        showToast('Failed to open video PiP', 'error');
+        sendResponse({ success: false, error: 'Video PiP failed' });
+      }
+      return true; // Keep channel open: getPipState/closePopup/launchVideoPiP complete async before sendResponse
+    }
     case 'togglePickerMode':
       togglePickerMode();
       sendResponse({ success: true, active: State.isPickerActive });

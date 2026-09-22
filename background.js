@@ -668,6 +668,73 @@ async function handleHybridPipRequest(params) {
 }
 
 // ============================================================================
+// PER-VIDEO POPUP RESOLUTION (fix/per-video-toggle)
+// Resolve exactly one popup windowId by sourceId|pipId|windowId|videoUrl
+// against PiPFactory.popupWindows + PiPFactory._popupWindowSources.
+// Returns a windowId or null when no single popup matches (native-only).
+// O(n) over tracked popups, no side effects, never escalates to close-all.
+// ============================================================================
+function resolveSinglePopupWindowId(factory, msg, sender) {
+  try {
+    if (!factory || !factory.popupWindows || factory.popupWindows.size === 0) return null;
+    const entries = Array.from(factory.popupWindows.entries());
+    const msgWindowId = typeof msg.windowId === 'number' ? msg.windowId : null;
+    if (msgWindowId !== null && factory.popupWindows.has(msgWindowId)) return msgWindowId;
+    if (typeof msg.pipId === 'string' && msg.pipId) {
+      for (const [windowId, data] of entries) {
+        if (data && data.pipId === msg.pipId) return windowId;
+      }
+    }
+    if (typeof msg.sourceId === 'string' && msg.sourceId) {
+      try {
+        const sources = factory._popupWindowSources
+          ? Array.from(factory._popupWindowSources.entries())
+          : [];
+        for (const [windowId, sourceId] of sources) {
+          if (sourceId === msg.sourceId && factory.popupWindows.has(windowId)) return windowId;
+        }
+      } catch {}
+    }
+    const candidates = [];
+    if (typeof msg.videoUrl === 'string' && msg.videoUrl) candidates.push(msg.videoUrl);
+    if (typeof msg.url === 'string' && msg.url) candidates.push(msg.url);
+    if (typeof msg.srcUrl === 'string' && msg.srcUrl) candidates.push(msg.srcUrl);
+    if (candidates.length > 0) {
+      const normalized = new Set();
+      for (const u of candidates) {
+        normalized.add(u);
+        try {
+          const src = new URL(u).searchParams.get('src');
+          if (src) normalized.add(src);
+        } catch {}
+      }
+      for (const [windowId, data] of entries) {
+        const stored = data ? data.videoUrl : null;
+        if (typeof stored !== 'string' || !stored) continue;
+        if (normalized.has(stored)) return windowId;
+        try {
+          const storedSrc = new URL(stored).searchParams.get('src');
+          if (storedSrc && normalized.has(storedSrc)) return windowId;
+        } catch {}
+      }
+      return null;
+    }
+    const senderTabId = sender && sender.tab && typeof sender.tab.id === 'number' ? sender.tab.id : null;
+    const hasIds = msgWindowId !== null || (typeof msg.pipId === 'string' && msg.pipId) || (typeof msg.sourceId === 'string' && msg.sourceId);
+    if (!hasIds) {
+      if (senderTabId !== null) {
+        const fromTab = entries.filter((entry) => entry[1] && entry[1].sourceTabId === senderTabId);
+        if (fromTab.length === 1) return fromTab[0][0];
+      }
+      if (entries.length === 1) return entries[0][0];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
 // UNIFIED MESSAGE HANDLER
 // ============================================================================
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -741,6 +808,62 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((err) => {
         sendResponse({ success: false, error: err?.message || 'Close failed' });
       });
+    return true;
+  }
+
+  // Per-video close from the originating video (Alt+P / menu on that video).
+  // Resolves exactly one popup by sourceId|pipId|windowId|videoUrl, removes
+  // that window only, persists, and replies { ok: true }. When nothing
+  // matches (native-only video) replies { ok: false, code: 'NOT_FOUND' } so
+  // content can exitPictureInPicture locally. Never escalates to close-all.
+  if (msg.action === 'closePopup') {
+    (async () => {
+      try {
+        const factory = _getFactory();
+        if (!factory) {
+          sendResponse({ ok: false, success: false, code: 'NOT_FOUND' });
+          return;
+        }
+        const targetWindowId = resolveSinglePopupWindowId(factory, msg, sender);
+        if (targetWindowId === null || targetWindowId === undefined) {
+          sendResponse({ ok: false, success: false, code: 'NOT_FOUND' });
+          return;
+        }
+        try {
+          if (chrome.windows?.remove) {
+            await chrome.windows.remove(targetWindowId).catch(() => {});
+          }
+        } catch {}
+        let closed = false;
+        try {
+          closed = await factory.closePopup(targetWindowId);
+        } catch (err) {
+          sendResponse({
+            ok: false,
+            success: false,
+            code: 'CLOSE_FAILED',
+            windowId: targetWindowId,
+            error: err?.message || 'Close failed'
+          });
+          return;
+        }
+        await persistSwState();
+        if (closed) {
+          sendResponse({ ok: true, success: true, windowId: targetWindowId, closed: true });
+        } else {
+          sendResponse({ ok: false, success: false, code: 'CLOSE_FAILED', windowId: targetWindowId });
+        }
+      } catch (err) {
+        try {
+          sendResponse({
+            ok: false,
+            success: false,
+            code: 'CLOSE_FAILED',
+            error: err?.message || 'Close failed'
+          });
+        } catch {}
+      }
+    })();
     return true;
   }
 

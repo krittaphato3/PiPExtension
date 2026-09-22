@@ -1035,50 +1035,86 @@ function renderMediaList(mediaItems, container, tabId) {
       if (!ok) showToast('Could not change mute state', 'error', 1500);
     };
 
+    // Per-video toggle (same as Alt+P on this video): forward shortcutTrigger
+    // for this media id. Content resolves per-video open/close-one; close-all
+    // is only ever sent from closeAllBtn. No closeAllPip call on this path.
+    const togglePerVideoPip = async () => {
+      const settings = await loadSettings();
+
+      // Use the same toggle logic as Alt+P by sending a shortcutTrigger message to content script
+      // This ensures consistent behavior and proper state detection
+      const result = await sendTabMessageSafe(
+        tabId,
+        {
+          action: 'shortcutTrigger',
+          id: media.pipId
+        },
+        { frameId: media.frameId }
+      );
+
+      if (result?.success) {
+        if (pipBtn) pipBtn.setAttribute('aria-pressed', 'true');
+        if (settings[KEYS.SHOW_NOTIFICATIONS]) {
+          if (result.action === 'closed') {
+            if (pipBtn) pipBtn.setAttribute('aria-pressed', 'false');
+            showToast(
+              `Closed ${result.count} PiP window${result.count > 1 ? 's' : ''}`,
+              'success',
+              1500
+            );
+          } else if (result.action === 'opened') {
+            showToast(
+              result.type === 'video' ? 'PiP opened' : 'Image PiP opened',
+              'success',
+              1000
+            );
+          }
+        }
+      } else {
+        // Only show error if there's actually an error, not just communication failure
+        if (result?.error === 'No media') {
+          showToast('No media found on page', 'warning');
+        } else if (result) {
+          // If we got a result but success is false, show the specific error
+          showToast(result.error || 'PiP operation failed', 'error');
+        }
+        // If no result at all (communication failure), don't show notification to avoid false alarms
+      }
+    };
+
     if (pipBtn) {
       pipBtn.onclick = async () => {
-        const settings = await loadSettings();
-
-        // Use the same toggle logic as Alt+P by sending a shortcutTrigger message to content script
-        // This ensures consistent behavior and proper state detection
-        const result = await sendTabMessageSafe(
-          tabId,
-          {
-            action: 'shortcutTrigger'
-          },
-          { frameId: media.frameId }
-        );
-
-        if (result?.success) {
-          pipBtn.setAttribute('aria-pressed', 'true');
-          if (settings[KEYS.SHOW_NOTIFICATIONS]) {
-            if (result.action === 'closed') {
-              pipBtn.setAttribute('aria-pressed', 'false');
-              showToast(
-                `Closed ${result.count} PiP window${result.count > 1 ? 's' : ''}`,
-                'success',
-                1500
-              );
-            } else if (result.action === 'opened') {
-              showToast(
-                result.type === 'video' ? 'PiP opened' : 'Image PiP opened',
-                'success',
-                1000
-              );
-            }
-          }
-        } else {
-          // Only show error if there's actually an error, not just communication failure
-          if (result?.error === 'No media') {
-            showToast('No media found on page', 'warning');
-          } else if (result) {
-            // If we got a result but success is false, show the specific error
-            showToast(result.error || 'PiP operation failed', 'error');
-          }
-          // If no result at all (communication failure), don't show notification to avoid false alarms
-        }
+        await togglePerVideoPip();
       };
     }
+
+    // Clicking the row itself toggles this video (no new UI). Inner buttons
+    // (play/mute/PiP) keep their own handlers and are ignored here.
+    div.addEventListener('click', async (e) => {
+      try {
+        if (e?.target?.closest?.('button, a, input, select, textarea')) return;
+      } catch {}
+      await togglePerVideoPip();
+    });
+
+    // Best-effort: if this row already carries its own close affordance,
+    // close just this video's popup. No affordance exists today so this
+    // skips; no new DOM is created here.
+    try {
+      const closeAffordance = div.querySelector('[data-close-pip], .media-close, .close-btn');
+      if (closeAffordance && !closeAffordance.dataset.pipCloseWired) {
+        closeAffordance.dataset.pipCloseWired = '1';
+        closeAffordance.addEventListener('click', async (e) => {
+          try {
+            if (e?.stopPropagation) e.stopPropagation();
+          } catch {}
+          try {
+            await chrome.runtime.sendMessage({ action: 'closePopup', sourceId: media.pipId });
+            await updatePipCount();
+          } catch {}
+        });
+      }
+    } catch {}
     container.appendChild(div);
   });
 }
