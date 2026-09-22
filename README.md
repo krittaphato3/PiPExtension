@@ -239,16 +239,16 @@ Background service worker centralizes PiPFactory dispatch, storage (7 keys + 60s
 
 ```mermaid
 flowchart TD
-  User[User Action<br/>click/Alt+P/K/context] --> Popup[popup.html/js<br/>settings+scanner]
-  Popup -->|tabs.sendMessage| Content[content.js<br/>detect/launch]
-  Content -->|runtime.sendMessage| BG[background SW<br/>PiPFactory+audio+menus]
-  Content <--> Factory[lib/pipFactory.js<br/>native vs popup routing]
-  BG -->|windows.create| Player[player.html?src<br/>proxy http(s) only]
-  Factory -->|native| Native[documentPictureInPicture<br/>zero-copy]
-  Factory -->|popup| BG
-  Player -->|reportAudible/muteOthers| BG
-  BG <--> Store[(storage.local<br/>7 keys+TTL60s)]
-  Content <-.->|preflight blob/EME/m3u8| Factory
+    User["User action<br/>click, Alt+P, context menu"] --> Popup["popup.html and popup.js<br/>settings and media scanner"]
+    Popup -->|"tabs.sendMessage"| Content["content.js<br/>detect and launch"]
+    Content -->|"runtime.sendMessage"| BG["background service worker<br/>dispatch, audio, menus"]
+    Content <--> Factory["pipFactory library<br/>native vs popup routing"]
+    BG -->|"windows.create"| Player["player page with src param<br/>proxy for https and http only"]
+    Factory -->|native| Native["documentPictureInPicture<br/>zero-copy"]
+    Factory -->|popup| BG
+    Player -->|"reportAudible and muteOthers"| BG
+    BG <--> Store["storage.local<br/>7 keys plus 60s TTL"]
+    Content <-->|"preflight blob, EME, m3u8"| Factory
 ```
 
 ### Extension Permissions
