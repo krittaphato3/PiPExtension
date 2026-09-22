@@ -13,6 +13,7 @@ FullPiP is a comprehensive Chrome extension that provides advanced Picture-in-Pi
 - [Installation](#installation)
 - [Usage](#usage)
 - [Configuration](#configuration)
+- [Limitations](#limitations)
 - [Architecture](#architecture)
 - [Development](#development)
 - [Contributing](#contributing)
@@ -30,7 +31,7 @@ FullPiP offers three distinct operational modes that automatically adapt to your
 
 ### Advanced Media Control
 
-- **Multi-Window Support**: Open unlimited PiP windows simultaneously
+- **Multi-Window Support**: Open up to 5 or unlimited PiP windows (default 3, see Configuration)
 - **Cross-Tab State Management**: Tracks PiP state across browser tabs
 - **Smart Duplicate Prevention**: Prevents opening the same video multiple times
 - **Multi-Monitor Positioning**: Target specific displays with manual placement
@@ -39,7 +40,7 @@ FullPiP offers three distinct operational modes that automatically adapt to your
 ### Seamless Integration
 
 - **Universal Video Support**: Works with HTML5 video, streaming platforms, and custom players
-- **Blob URL Compatibility**: Handles MediaSource and streaming content
+- **Native-only streaming**: `blob:` / MSE / EME content must use Native API mode (see Limitations)
 - **Context Menu Integration**: Right-click any video element for instant PiP
 - **Keyboard Shortcuts**: Comprehensive hotkey support for power users
 - **Settings Persistence**: Cross-session configuration with Chrome storage sync
@@ -54,7 +55,9 @@ FullPiP offers three distinct operational modes that automatically adapt to your
 
 ## Installation
 
-### From Chrome Web Store
+> **Note:** Chrome Web Store listing is TBD — no listing ID yet. Use Manual Installation below.
+
+### From Chrome Web Store (TBD)
 
 1. Visit the [Chrome Web Store page](https://chrome.google.com/webstore)
 2. Click "Add to Chrome"
@@ -83,27 +86,43 @@ FullPiP offers three distinct operational modes that automatically adapt to your
 
 ### Keyboard Shortcuts
 
-| Shortcut        | Action                     | Context            |
-| --------------- | -------------------------- | ------------------ |
-| Alt + P         | Toggle PiP for main video  | Any webpage        |
-| Alt + K         | Toggle element picker mode | Any webpage        |
-| Alt + Shift + P | Close all PiP windows      | Any webpage        |
-| + / -           | Zoom in/out                | Inside PiP window  |
-| Arrow Keys      | Pan content                | When zoomed in PiP |
-| Double Click    | Reset zoom and pan         | Inside PiP window  |
-| 0               | Reset to default view      | Inside PiP window  |
-| F               | Cycle scale mode           | Popup PiP windows  |
-| M               | Toggle audio mute          | Popup PiP windows  |
-| Space           | Play/pause video           | Popup PiP windows  |
-| Escape          | Close PiP window           | Inside PiP window  |
+Global commands (any webpage):
+
+| Shortcut        | Action                     |
+| --------------- | -------------------------- |
+| Alt + P         | Toggle PiP for main video  |
+| Alt + K         | Toggle element picker mode |
+| Alt + Shift + P | Close all PiP windows      |
+
+Content zoom windows (`documentPictureInPicture` image PiP):
+
+| Shortcut     | Action                  |
+| ------------ | ----------------------- |
+| + / -        | Zoom in/out             |
+| Mouse wheel  | Zoom                    |
+| Arrow Keys   | Pan content when zoomed |
+| 0            | Reset to default view   |
+| Double-click | Reset zoom and pan      |
+| Esc          | Close PiP window        |
+
+Popup player windows (`player.html` video popups):
+
+| Shortcut     | Action                                   |
+| ------------ | ---------------------------------------- |
+| Space        | Play / pause                             |
+| M            | Mute / unmute                            |
+| F            | Cycle fit (`contain` / `cover` / `fill`) |
+| Left / Right | Seek ∓ 5s                                |
+| Up / Down    | Volume ± 10%                             |
 
 ### Advanced Controls
 
-- **Zoom**: Mouse wheel or + / - keys
-- **Pan**: Arrow keys (when zoomed)
-- **Reset View**: Double-click or 0 key
-- **Scale Mode**: F key (popup PiP only)
-- **Playback**: Spacebar (popup PiP only)
+- **Zoom**: Mouse wheel or + / - keys (content zoom windows)
+- **Pan**: Arrow keys when zoomed (content zoom windows)
+- **Reset View**: Double-click or 0 key (content zoom windows)
+- **Close**: Esc (content zoom windows)
+- **Playback**: Spacebar (popup player only)
+- **Scale Mode**: F key cycles `contain` / `cover` / `fill` (popup player only)
 
 ## Configuration
 
@@ -117,7 +136,7 @@ Choose from three operational modes in the extension settings:
 
 ### Window Management
 
-- **Max Windows**: Set limit from 1-5 or choose Unlimited
+- **Max Windows**: 1–5 or Unlimited (default 3). Unlimited is rate-limited (200 ms dispatch settle) so practical limits apply under load.
 - **Window Positioning**: Auto-placement or manual positioning
 - **Multi-Monitor Support**: Target specific displays
 
@@ -146,6 +165,36 @@ Choose from three operational modes in the extension settings:
 
 - **Toast Duration**: Set notification display time (1-10 seconds)
 - **Show Notifications**: Toggle toast notifications on or off
+
+### Audio Manager
+
+Single-audio manager (`audioMode`, default `mix`) in popup Window settings (injected `#audioMode` select):
+
+| Mode         | Behavior                                |
+| ------------ | --------------------------------------- |
+| `mix`        | No behavior change, all windows audible |
+| `solo`       | New audible playback pauses others      |
+| `muteOthers` | New audible playback mutes others       |
+
+- Popup player reports audible state and honors `muteOthers` / `solo` commands from the background.
+- Player `M` key toggles mute and sets a manual unmute override — user choice always wins over automation.
+
+### Advanced
+
+Advanced collapsible section in the popup:
+
+- **Force Popup Mode** (`forcePopup`, default off): Skip native PiP. Labelled "Skip native PiP" in Multi-Monitor card.
+- **Initial Size** (`pipInitialSize`, default `visual`): `visual` (on-screen size) / `actual` (natural size, capped to screen ratio) / `fit` (fit to screen at 85%).
+- **Footer badge** (`#footerMode`): Shows the active engine name in the popup footer.
+
+## Limitations
+
+Popup `player.js` cannot proxy all sources. These must use Native API mode:
+
+- `blob:` URLs — tab-scoped, rejected early (`Streaming video cannot be proxied`).
+- Non-`http(s)` sources — only `http:` / `https:` may be proxied (`Unsupported video source`).
+- Encrypted / EME / DRM — `encrypted` event fails fast (`DRM_DETECTED`, cannot be played in a popup window).
+- MSE / HLS / DASH manifests (`.m3u8` / `.mpd`) need the page player stack — routed to native by `pipFactory`.
 
 ## Architecture
 
@@ -182,6 +231,26 @@ Choose from three operational modes in the extension settings:
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
+## Flowchart
+
+Native-first routing tries `documentPictureInPicture` zero-copy before falling back to popup windows.
+Popup `player.html?src` proxies `http(s)` only; `blob:` / EME / `.m3u8` stay native via preflight.
+Background service worker centralizes PiPFactory dispatch, storage (7 keys + 60s TTL), and single-audio (`mix` / `solo` / `muteOthers`).
+
+```mermaid
+flowchart TD
+  User[User Action<br/>click/Alt+P/K/context] --> Popup[popup.html/js<br/>settings+scanner]
+  Popup -->|tabs.sendMessage| Content[content.js<br/>detect/launch]
+  Content -->|runtime.sendMessage| BG[background SW<br/>PiPFactory+audio+menus]
+  Content <--> Factory[lib/pipFactory.js<br/>native vs popup routing]
+  BG -->|windows.create| Player[player.html?src<br/>proxy http(s) only]
+  Factory -->|native| Native[documentPictureInPicture<br/>zero-copy]
+  Factory -->|popup| BG
+  Player -->|reportAudible/muteOthers| BG
+  BG <--> Store[(storage.local<br/>7 keys+TTL60s)]
+  Content <-.->|preflight blob/EME/m3u8| Factory
+```
+
 ### Extension Permissions
 
 FullPiP requires the following Chrome permissions:
@@ -194,11 +263,15 @@ FullPiP requires the following Chrome permissions:
 - `system.display`: Multi-monitor support
 - `notifications`: Display toast notifications for user feedback
 
+Host permissions:
+
+- `<all_urls>`: Required because popup windows opened via `chrome.windows.create` are new tabs where `activeTab` does not apply, so `scripting.executeScript` CSS injection into those popup tabs needs host access.
+
 ## Development
 
 ### Prerequisites
 
-- Chrome Browser (version 109+ for Manifest V3 support)
+- Chrome 116+ for `documentPictureInPicture` (MV3 baseline 88+)
 - Node.js (for running tests)
 - Git (for version control)
 
@@ -229,12 +302,28 @@ npm run lint:fix
 # Format code with Prettier
 npm run format
 
+# Check formatting
+npm run format:check
+
 # Run PiPFactory unit tests
 npm test
 
+# Run content/player/popup util tests
+npm run test:utils
+
 # Run ALL tests (PiPFactory + content utils + player + popup utils)
 npm run test:all
+
+# CI-equivalent entry point
+npm run test:ci
+
+# Version-gated release zip (manifest/package/README must match)
+npm run pack
 ```
+
+CI (`.github/workflows/ci.yml`, Node 20): `npm ci`, `npm run lint`, `npm run format:check`, `npm run test:all`.
+
+Pack (`scripts/pack.mjs`): version-gates `manifest.json` / `package.json` / README badge, warns on Prettier drift, and writes `fullpip-<ver>.zip` excluding `node_modules`, `tests`, `.git`, `.playwright-mcp`, `.kilo`.
 
 ### Testing
 
@@ -298,8 +387,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Fix P0/P1/P2 bugs across background, content, popup, player, and pipFactory
 - Responsive popup UI improvements
-- Audio manager enhancements
-- CI workflow and pack script improvements
+- Audio manager (`mix` / `solo` / `muteOthers`, default `mix`) with player `M` manual override
+- `forcePopup` Skip native, `pipInitialSize` (`visual` / `actual` / `fit`), `#footerMode` engine badge
+- `host_permissions` `<all_urls>` for popup-tab `scripting.executeScript` after `windows.create`
+- CI (Node 20: lint + `format:check` + `test:all`) and version-gated `pack.mjs` (`fullpip-<ver>.zip` excludes)
+- Native-only routing for `blob:` / MSE / EME — popup player rejects blob, non-`http(s)`, and `encrypted` events
 
 ### Version 1.1.0
 
@@ -319,12 +411,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Version 1.0.0
 
 - Intelligent PiP routing with three operational modes
-- Unlimited multi-window PiP support
+- Multi-window PiP support (1–5 / unlimited, default 3, 200 ms rate-limit)
 - Cross-tab state management
 - Multi-monitor positioning
 - Comprehensive keyboard shortcuts
 - Responsive extension popup
-- Blob URL compatibility
+- Native-only streaming for `blob:` / MSE / EME content
 - Smart duplicate prevention
 - Settings synchronization
 - Professional user interface

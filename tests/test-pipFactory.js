@@ -22,13 +22,20 @@ global.chrome = {
         }
         return result;
       },
-      async set(obj) { Object.assign(this._store, obj); },
+      async set(obj) {
+        Object.assign(this._store, obj);
+      },
       async remove(keys) {
         const keysArr = Array.isArray(keys) ? keys : [keys];
-        keysArr.forEach(k => delete this._store[k]);
+        keysArr.forEach((k) => delete this._store[k]);
       }
     },
-    sync: { async get() { return {}; }, async set() {} }
+    sync: {
+      async get() {
+        return {};
+      },
+      async set() {}
+    }
   },
   windows: {
     onRemoved: { addListener() {} },
@@ -57,24 +64,40 @@ globalThis.navigator = global.navigator;
 let factoryCode = fs.readFileSync(path.join(__dirname, '..', 'lib', 'pipFactory.js'), 'utf-8');
 factoryCode = factoryCode.replace(/if \(typeof module[\s\S]*$/, '');
 
-const factoryFn = new Function(factoryCode + '\nreturn { PiPFactory, PiPFactoryConfig, NativePipStateManager };');
+const factoryFn = new Function(
+  factoryCode + '\nreturn { PiPFactory, PiPFactoryConfig, NativePipStateManager };'
+);
 const { PiPFactory, PiPFactoryConfig, NativePipStateManager } = factoryFn();
 
 // ============================================================
 // Test Runner
 // ============================================================
-let passed = 0, failed = 0, total = 0;
+let passed = 0,
+  failed = 0,
+  total = 0;
 
 function assert(condition, name) {
   total++;
-  if (condition) { passed++; console.log(`  ✅ ${name}`); }
-  else { failed++; console.error(`  ❌ ${name}`); }
+  if (condition) {
+    passed++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    failed++;
+    console.error(`  ❌ ${name}`);
+  }
 }
 
 function assertEq(actual, expected, name) {
   total++;
-  if (actual === expected) { passed++; console.log(`  ✅ ${name}`); }
-  else { failed++; console.error(`  ❌ ${name} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`); }
+  if (actual === expected) {
+    passed++;
+    console.log(`  ✅ ${name}`);
+  } else {
+    failed++;
+    console.error(
+      `  ❌ ${name} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
+    );
+  }
 }
 
 async function group(name, tests) {
@@ -105,8 +128,16 @@ async function group(name, tests) {
 
   await group('_shouldUsePopup routing', [
     () => {
-      assertEq(PiPFactory._shouldUsePopup({ forcePopup: true, videoElement: {} }), true, 'forcePopup');
-      assertEq(PiPFactory._shouldUsePopup({ forceNative: true, videoElement: {} }), false, 'forceNative');
+      assertEq(
+        PiPFactory._shouldUsePopup({ forcePopup: true, videoElement: {} }),
+        true,
+        'forcePopup'
+      );
+      assertEq(
+        PiPFactory._shouldUsePopup({ forceNative: true, videoElement: {} }),
+        false,
+        'forceNative'
+      );
       assertEq(PiPFactory._shouldUsePopup({ videoElement: null }), true, 'no video');
       assertEq(PiPFactory._shouldUsePopup({ videoElement: undefined }), true, 'undefined video');
       assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, screenId: 1 }), true, 'screenId');
@@ -119,25 +150,61 @@ async function group(name, tests) {
   await group('Mode routing (api/popup/hybrid)', [
     () => {
       // API mode → always native
-      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'api' }), false, 'api mode → native');
-      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'api', forcePopup: true }), false, 'api mode ignores forcePopup');
-      assertEq(PiPFactory._shouldUsePopup({ videoElement: null, mode: 'api' }), false, 'api mode ignores null video');
+      assertEq(
+        PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'api' }),
+        false,
+        'api mode → native'
+      );
+      assertEq(
+        PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'api', forcePopup: true }),
+        false,
+        'api mode ignores forcePopup'
+      );
+      assertEq(
+        PiPFactory._shouldUsePopup({ videoElement: null, mode: 'api' }),
+        false,
+        'api mode ignores null video'
+      );
     },
     () => {
       // Popup mode → always popup
-      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'popup' }), true, 'popup mode → popup');
-      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'popup', forceNative: true }), true, 'popup mode ignores forceNative');
+      assertEq(
+        PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'popup' }),
+        true,
+        'popup mode → popup'
+      );
+      assertEq(
+        PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'popup', forceNative: true }),
+        true,
+        'popup mode ignores forceNative'
+      );
     },
     () => {
       // Hybrid mode → uses default logic
-      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'hybrid' }), false, 'hybrid → native (default)');
-      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'hybrid', forcePopup: true }), true, 'hybrid respects forcePopup');
-      assertEq(PiPFactory._shouldUsePopup({ videoElement: null, mode: 'hybrid' }), true, 'hybrid → popup (no video)');
+      assertEq(
+        PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'hybrid' }),
+        false,
+        'hybrid → native (default)'
+      );
+      assertEq(
+        PiPFactory._shouldUsePopup({ videoElement: {}, mode: 'hybrid', forcePopup: true }),
+        true,
+        'hybrid respects forcePopup'
+      );
+      assertEq(
+        PiPFactory._shouldUsePopup({ videoElement: null, mode: 'hybrid' }),
+        true,
+        'hybrid → popup (no video)'
+      );
     },
     () => {
       // Default mode (no mode specified) → hybrid behavior
       assertEq(PiPFactory._shouldUsePopup({ videoElement: {} }), false, 'no mode → native');
-      assertEq(PiPFactory._shouldUsePopup({ videoElement: {}, forcePopup: true }), true, 'no mode + forcePopup → popup');
+      assertEq(
+        PiPFactory._shouldUsePopup({ videoElement: {}, forcePopup: true }),
+        true,
+        'no mode + forcePopup → popup'
+      );
     }
   ]);
 
@@ -173,15 +240,45 @@ async function group(name, tests) {
       assertEq(PiPFactory._shouldUseProxy('https://x.com/page'), false, 'page');
       assertEq(PiPFactory._shouldUseProxy(''), false, 'empty');
       assertEq(PiPFactory._shouldUseProxy(null), false, 'null');
-      assertEq(PiPFactory._shouldUseProxy('chrome-extension://abc/player.html?src=https%3A%2F%2Fx.com%2Fv.mp4'), false, 'no double-wrap');
+      assertEq(
+        PiPFactory._shouldUseProxy(
+          'chrome-extension://abc/player.html?src=https%3A%2F%2Fx.com%2Fv.mp4'
+        ),
+        false,
+        'no double-wrap'
+      );
     }
   ]);
 
   await group('_extractVideoUrl', [
     () => {
-      assertEq(PiPFactory._extractVideoUrl({ currentSrc: 'https://x.com/v.mp4', src: '', querySelectorAll: () => [] }), 'https://x.com/v.mp4', 'currentSrc');
-      assertEq(PiPFactory._extractVideoUrl({ currentSrc: '', src: 'https://x.com/v.mp4', querySelectorAll: () => [] }), 'https://x.com/v.mp4', 'src');
-      assertEq(PiPFactory._extractVideoUrl({ currentSrc: '', src: '', querySelectorAll: () => [{ src: 'https://x.com/s.mp4' }] }), 'https://x.com/s.mp4', 'source');
+      assertEq(
+        PiPFactory._extractVideoUrl({
+          currentSrc: 'https://x.com/v.mp4',
+          src: '',
+          querySelectorAll: () => []
+        }),
+        'https://x.com/v.mp4',
+        'currentSrc'
+      );
+      assertEq(
+        PiPFactory._extractVideoUrl({
+          currentSrc: '',
+          src: 'https://x.com/v.mp4',
+          querySelectorAll: () => []
+        }),
+        'https://x.com/v.mp4',
+        'src'
+      );
+      assertEq(
+        PiPFactory._extractVideoUrl({
+          currentSrc: '',
+          src: '',
+          querySelectorAll: () => [{ src: 'https://x.com/s.mp4' }]
+        }),
+        'https://x.com/s.mp4',
+        'source'
+      );
       assertEq(PiPFactory._extractVideoUrl(null), null, 'null');
       assertEq(PiPFactory._extractVideoUrl(undefined), null, 'undefined');
     }
@@ -227,7 +324,8 @@ async function group(name, tests) {
         assert(v >= 100, 'version >= 100');
       } else {
         console.log('  ⏭️  version detection — skipped (Node.js mock limitation)');
-        total++; passed++;
+        total++;
+        passed++;
       }
     }
   ]);
@@ -244,11 +342,19 @@ async function group(name, tests) {
   await group('Blob URL detection', [
     () => {
       // Mock blob video element
-      const blobVideo = { currentSrc: 'blob:https://youtube.com/abc123', src: '', querySelectorAll: () => [] };
+      const blobVideo = {
+        currentSrc: 'blob:https://youtube.com/abc123',
+        src: '',
+        querySelectorAll: () => []
+      };
       assertEq(PiPFactory._isBlobUrl(blobVideo), true, 'blob currentSrc detected');
 
       // Non-blob video
-      const normalVideo = { currentSrc: 'https://example.com/video.mp4', src: '', querySelectorAll: () => [] };
+      const normalVideo = {
+        currentSrc: 'https://example.com/video.mp4',
+        src: '',
+        querySelectorAll: () => []
+      };
       assertEq(PiPFactory._isBlobUrl(normalVideo), false, 'normal URL not blob');
 
       // _shouldUsePopup forces native for blob URLs even with forcePopup=true
@@ -256,11 +362,18 @@ async function group(name, tests) {
       assertEq(blobResult, false, 'blob URL forces native despite forcePopup');
 
       // _shouldUsePopup allows popup for non-blob with forcePopup
-      const normalResult = PiPFactory._shouldUsePopup({ videoElement: normalVideo, forcePopup: true });
+      const normalResult = PiPFactory._shouldUsePopup({
+        videoElement: normalVideo,
+        forcePopup: true
+      });
       assertEq(normalResult, true, 'non-blob with forcePopup → popup');
 
       // Blob URL in videoUrl param
-      const urlResult = PiPFactory._shouldUsePopup({ videoElement: null, videoUrl: 'blob:https://x.com/vid', forcePopup: true });
+      const urlResult = PiPFactory._shouldUsePopup({
+        videoElement: null,
+        videoUrl: 'blob:https://x.com/vid',
+        forcePopup: true
+      });
       assertEq(urlResult, false, 'blob videoUrl forces native');
     }
   ]);
@@ -271,7 +384,12 @@ async function group(name, tests) {
       PiPFactory._activeSources.clear();
 
       // Mock video (must have querySelectorAll for _isBlobUrl)
-      const vid = { currentSrc: 'https://example.com/test.mp4', src: '', querySelectorAll: () => [], dataset: {} };
+      const vid = {
+        currentSrc: 'https://example.com/test.mp4',
+        src: '',
+        querySelectorAll: () => [],
+        dataset: {}
+      };
       const sourceId = PiPFactory._getSourceId(vid);
       assertEq(sourceId, 'https://example.com/test.mp4', 'source ID extracted');
 
