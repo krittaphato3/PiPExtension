@@ -843,6 +843,12 @@ function renderMediaList(mediaItems, container, tabId) {
     const mediaTitle = document.createElement('div');
     mediaTitle.className = 'media-title';
     mediaTitle.textContent = titleText;
+    mediaTitle.title = titleText;
+    mediaTitle.dataset.fullTitle = titleText;
+    div.dataset.fullTitle = titleText;
+    thumbEl.setAttribute('role', 'img');
+    thumbEl.setAttribute('aria-label', titleText);
+    thumbEl.title = titleText;
 
     const mediaMeta = document.createElement('div');
     mediaMeta.className = 'media-meta';
@@ -1063,11 +1069,7 @@ function renderMediaList(mediaItems, container, tabId) {
               1500
             );
           } else if (result.action === 'opened') {
-            showToast(
-              result.type === 'video' ? 'PiP opened' : 'Image PiP opened',
-              'success',
-              1000
-            );
+            showToast(result.type === 'video' ? 'PiP opened' : 'Image PiP opened', 'success', 1000);
           }
         }
       } else {
